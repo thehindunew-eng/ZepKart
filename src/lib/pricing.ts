@@ -110,3 +110,11 @@ export function gstInclusive(amount: number, rate: number) {
 }
 
 export const money = (n: number) => r2(n);
+
+/** Vendor plans. Basic is free and connects you with customers. Premium unlocks wholesalers and restock. */
+export const PREMIUM_PLAN = { days: 30, monthlyPrice: 999, gstRate: 18, label: "Premium" } as const;
+
+export function premiumQuote() {
+  const gst = r2((PREMIUM_PLAN.monthlyPrice * PREMIUM_PLAN.gstRate) / 100);
+  return { days: PREMIUM_PLAN.days, base: PREMIUM_PLAN.monthlyPrice, gstRate: PREMIUM_PLAN.gstRate, gst, total: r2(PREMIUM_PLAN.monthlyPrice + gst) };
+}

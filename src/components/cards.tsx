@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { useCart } from "@/components/CartProvider";
-import { Badge, Button, ProductImage, Stepper, StatusPill, VisitStoreButton, Glass } from "@/components/ui";
+import { Stepper, ProductImage } from "@/components/ui";
 import { money, percentOff } from "@/lib/utils";
-import { Star, Clock, Truck, Footprints, Plus } from "lucide-react";
+import { Clock, Truck, Footprints, Plus, Star, MapPin } from "lucide-react";
 
 export type ShopProduct = {
   id: string;
   storeId: string;
   storeName?: string;
-  storeLocality?: string;
+  storeLocality?: string | null;
   storeCity?: string;
   name: string;
   imageUrl: string | null;
@@ -23,9 +23,30 @@ export type ShopProduct = {
   bargainEnabled: boolean;
   gstIncluded: number;
   storeOpen?: boolean;
+  distanceKm?: number | null;
 };
 
 export type ShopService = { id: string; title: string; description: string | null; price: number; unitLabel: string; gstRate: number; isActive: boolean };
+
+export type ShopStore = {
+  id: string;
+  shopName: string;
+  description: string | null;
+  dpUrl: string | null;
+  city: string;
+  locality?: string | null;
+  category: string;
+  isOpen: boolean;
+  nextOpeningAt: string | null;
+  nextClosingAt: string | null;
+  deliveryAvailable: boolean;
+  pickupAvailable: boolean;
+  rating: number;
+  productCount?: number;
+  distanceKm?: number | null;
+  lat?: number | null;
+  lng?: number | null;
+};
 
 /** Adds to the single-store basket, asking before replacing another store's items. */
 export function useCartActions() {
@@ -58,95 +79,98 @@ export function ProductCard({ p, showStore = true }: { p: ShopProduct; showStore
   const off = percentOff(p.price, p.mrp);
   const canBuy = p.available && p.storeOpen !== false;
   return (
-    <Glass className="rise group flex flex-col overflow-hidden !rounded-[24px] transition hover:-translate-y-0.5">
-      <Link href={`/products/${p.id}`} className="relative block aspect-[4/3] overflow-hidden bg-white/40">
-        <ProductImage src={p.imageUrl} category={p.category} alt={p.name} className="transition duration-500 group-hover:scale-105" />
-        {off > 0 && <span className="absolute left-3 top-3 rounded-full bg-emerald-700 px-2 py-0.5 text-[11px] font-black text-white">{off}% off</span>}
-        {!p.available && <span className="absolute inset-0 grid place-items-center bg-white/55 text-[13px] font-black uppercase tracking-wider text-ink/70 backdrop-blur-[2px]">Sold out</span>}
-        {p.available && p.stockLeft != null && <span className="absolute bottom-3 left-3 rounded-full bg-amber-100/90 px-2 py-0.5 text-[11px] font-bold text-amber-900">Only {p.stockLeft} left</span>}
+    <div className="group flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white transition hover:shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+      <Link href={`/products/${p.id}`} className="relative block aspect-square overflow-hidden bg-gray-50">
+        <ProductImage src={p.imageUrl} category={p.category} alt={p.name} className={`transition duration-500 group-hover:scale-105 ${!p.available ? "grayscale" : ""}`} />
+        {off > 0 && p.available && <span className="absolute left-2.5 top-2.5 rounded-md bg-leaf px-1.5 py-0.5 text-[11px] font-black text-white">{off}% OFF</span>}
+        {!p.available && (
+          <span className="absolute inset-0 grid place-items-center bg-white/60">
+            <span className="rounded-lg bg-ink px-2.5 py-1 text-[11px] font-black uppercase tracking-wide text-white">Out of stock</span>
+          </span>
+        )}
+        <span className="absolute bottom-2.5 left-2.5 rounded-md bg-white/90 px-1.5 py-0.5 text-[11px] font-bold text-ink/80">{p.weightLabel}</span>
       </Link>
-      <div className="flex flex-1 flex-col gap-2 p-4">
-        <div>
-          <Link href={`/products/${p.id}`} className="clamp2 text-[14.5px] font-extrabold leading-snug tracking-tight hover:underline">
-            {p.name}
-          </Link>
-          <p className="text-[12px] font-semibold text-ink/50">{p.weightLabel}</p>
+      <div className="flex flex-1 flex-col p-3">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-[15px] font-black">{money(p.price)}</span>
+          {p.mrp > p.price && <span className="text-[11.5px] font-semibold text-ink/40 line-through">{money(p.mrp)}</span>}
         </div>
-        <div className="flex items-end justify-between gap-2">
-          <div>
-            <p className="text-[17px] font-black tabular-nums">{money(p.price)}</p>
-            {p.mrp > p.price && <p className="text-[12px] font-semibold text-ink/40 line-through">{money(p.mrp)}</p>}
-          </div>
-          {inBasket > 0 ? (
-            <Stepper value={inBasket} size="sm" onChange={(v) => setItemQty(p.id, v)} max={50} />
+        <Link href={`/products/${p.id}`} className="mt-1 line-clamp-2 text-[13.5px] font-semibold leading-snug text-ink hover:text-leaf-deep">
+          {p.name}
+        </Link>
+        {showStore && (
+          <p className="mt-1 truncate text-[11.5px] text-ink/55">
+            {p.storeName}
+            {p.storeLocality ? ` · ${p.storeLocality}` : ""}
+            {p.distanceKm != null ? ` · ${p.distanceKm} km` : ""}
+          </p>
+        )}
+        <div className="mt-auto pt-3">
+          {!p.available ? (
+            <span className="block w-full rounded-xl bg-gray-100 py-2 text-center text-[12px] font-bold text-ink/55">Notify me</span>
+          ) : inBasket > 0 ? (
+            <Stepper size="sm" value={inBasket} onChange={(v) => setItemQty(p.id, v)} />
           ) : (
-            <Button size="sm" disabled={!canBuy} onClick={() => addProduct(p, 1)} aria-label={`Add ${p.name}`}>
-              <Plus className="h-4 w-4" /> Add
-            </Button>
+            <button
+              disabled={!canBuy}
+              onClick={() => addProduct(p, 1)}
+              className="flex w-full items-center justify-center gap-1 rounded-xl border border-leaf/40 bg-leaf/5 py-2 text-[13px] font-black text-leaf-deep transition hover:bg-leaf hover:text-white disabled:opacity-40"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add
+            </button>
           )}
         </div>
-        {showStore && p.storeName && (
-          <div className="mt-auto flex items-center justify-between gap-2 border-t border-ink/5 pt-3">
-            <span className="truncate text-[12px] font-semibold text-ink/60">{p.storeName}</span>
-            <VisitStoreButton storeId={p.storeId} label="Visit" />
-          </div>
-        )}
-        {p.bargainEnabled && <Badge tone="gold" className="w-fit">Bargain on</Badge>}
       </div>
-    </Glass>
+    </div>
   );
 }
-
-export type ShopStore = {
-  id: string;
-  shopName: string;
-  description: string | null;
-  dpUrl: string | null;
-  locality: string | null;
-  city: string;
-  category: string;
-  isOpen: boolean;
-  nextOpeningAt: string | null;
-  nextClosingAt: string | null;
-  pickupAvailable: boolean;
-  deliveryAvailable: boolean;
-  etaMinutes: number;
-  rating: number;
-  productCount?: number;
-};
 
 export function StoreCard({ s }: { s: ShopStore }) {
   return (
-    <Glass className="rise flex flex-col gap-4 p-5 transition hover:-translate-y-0.5">
-      <div className="flex items-start gap-3.5">
-        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-white/90 bg-white/70 shadow-sm">
-          {s.dpUrl ? <img src={s.dpUrl} alt="" className="h-full w-full object-cover" /> : <ProductImage src={null} category="Grocery" alt="" />}
-        </div>
-        <div className="min-w-0 flex-1">
-          <Link href={`/stores/${s.id}`} className="block truncate text-[16px] font-extrabold tracking-tight hover:underline">
-            {s.shopName}
-          </Link>
-          <p className="truncate text-[12.5px] font-semibold text-ink/55">
-            {s.locality}, {s.city} · {s.category}
-          </p>
-          <div className="mt-1.5 flex items-center gap-2 text-[12px] font-bold text-ink/65">
-            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-500" /> {s.rating.toFixed(1)}
-            <span className="text-ink/25">•</span>
-            <Clock className="h-3.5 w-3.5" /> {s.etaMinutes} min
-          </div>
-        </div>
+    <Link href={`/stores/${s.id}`} className="group overflow-hidden rounded-2xl border border-gray-200 bg-white transition hover:shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+      <div className="relative h-36 overflow-hidden bg-gray-100">
+        {s.dpUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={s.dpUrl} alt={s.shopName} loading="lazy" className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+        ) : (
+          <div className="grid h-full w-full place-items-center bg-gradient-to-br from-leaf/15 to-gold/20 text-4xl">🏪</div>
+        )}
+        <span className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-black tracking-wide text-white ${s.isOpen ? "bg-leaf" : "bg-ink"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full live-dot ${s.isOpen ? "bg-white" : "bg-red-400"}`} />
+          {s.isOpen ? "OPEN" : "CLOSED"}
+        </span>
+        <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[12px] font-black">
+          <Star className="h-3 w-3 fill-amber-400 text-amber-400" /> {Number(s.rating ?? 4.5).toFixed(1)}
+        </span>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusPill compact isOpen={s.isOpen} nextOpeningAt={s.nextOpeningAt} nextClosingAt={s.nextClosingAt} />
-        {s.pickupAvailable && <Badge tone="blue"><Footprints className="h-3 w-3" /> Pickup</Badge>}
-        {s.deliveryAvailable && <Badge tone="purple"><Truck className="h-3 w-3" /> Delivery</Badge>}
-      </div>
-      <div className="mt-auto flex items-center justify-between gap-2">
-        <span className="text-[12.5px] font-semibold text-ink/55">{s.productCount != null ? `${s.productCount} items in stock` : ""}</span>
-        <div className="flex gap-2">
-          <VisitStoreButton storeId={s.id} label="Visit store" />
+      <div className="p-4">
+        <p className="truncate text-[15.5px] font-black">{s.shopName}</p>
+        <p className="mt-0.5 truncate text-[12.5px] text-ink/55">
+          {s.locality ? `${s.locality}, ` : ""}
+          {s.city} · {s.category}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11.5px] font-bold">
+          {s.deliveryAvailable && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-green-50 px-2 py-1 text-green-800">
+              <Truck className="h-3 w-3" /> Delivery
+            </span>
+          )}
+          {s.pickupAvailable && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-sky-50 px-2 py-1 text-sky-800">
+              <Footprints className="h-3 w-3" /> Pickup
+            </span>
+          )}
+          {s.distanceKm != null && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-1 text-ink/70">
+              <MapPin className="h-3 w-3" /> {s.distanceKm} km
+            </span>
+          )}
         </div>
+        <p className="mt-2.5 flex items-center gap-1 text-[11.5px] font-semibold text-ink/50">
+          <Clock className="h-3 w-3" /> {s.isOpen ? s.nextClosingAt : s.nextOpeningAt}
+        </p>
       </div>
-    </Glass>
+    </Link>
   );
 }
+

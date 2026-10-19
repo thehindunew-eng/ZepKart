@@ -68,7 +68,7 @@ export default function CartPage() {
       cancel = true;
       clearTimeout(t);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [linesKey, user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (authLoading) return <Skeleton className="h-96" />;

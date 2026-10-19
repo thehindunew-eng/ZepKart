@@ -186,7 +186,7 @@ export default function AdsPage() {
           ) : (
             <div className="space-y-3">
               <div className="relative overflow-hidden rounded-3xl bg-black">
-                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                { }
                 <video src={video.url} className="aspect-video w-full object-contain" controls muted playsInline preload="metadata" />
               </div>
               <div className="flex items-center justify-between text-[12.5px] text-ink/60">
@@ -245,7 +245,7 @@ export default function AdsPage() {
             list.map((c) => (
               <Glass key={c.id} className="rise flex gap-4 p-4">
                 <div className="w-28 shrink-0 overflow-hidden rounded-2xl bg-black">
-                  {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                  { }
                   <video src={c.videoUrl} className="aspect-[4/5] w-full object-cover" muted preload="metadata" />
                 </div>
                 <div className="min-w-0 flex-1 space-y-1.5">

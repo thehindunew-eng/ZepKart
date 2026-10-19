@@ -2,7 +2,7 @@
 
 import { forwardRef, useEffect, useId, useRef } from "react";
 import Link from "next/link";
-import { X, Loader2, Store, ArrowUpRight } from "lucide-react";
+import { X, Loader2, Store, ArrowUpRight, Navigation } from "lucide-react";
 import { cn, CATEGORY_EMOJI } from "@/lib/utils";
 import { storeStatusText } from "@/lib/time";
 
@@ -203,5 +203,22 @@ export function Stepper({ value, onChange, min = 0, max = 99, disabled, size = "
         +
       </button>
     </div>
+  );
+}
+
+/** Opens Google Maps directions to a store. Render only for customers (pickup). */
+export function NavigateButton({ lat, lng, size = "md" }: { lat: number | null | undefined; lng: number | null | undefined; size?: "sm" | "md" }) {
+  if (lat == null || lng == null) return null;
+  const href = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn("inline-flex items-center gap-1.5 rounded-full bg-leaf font-bold text-white shadow-sm transition hover:bg-leaf-deep", size === "sm" ? "h-8 px-3 text-[12.5px]" : "h-10 px-4 text-[13.5px]")}
+    >
+      <Navigation className="h-3.5 w-3.5" />
+      Navigate
+    </a>
   );
 }

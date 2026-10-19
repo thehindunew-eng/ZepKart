@@ -3,7 +3,8 @@ import { ZodError } from "zod";
 import { eq } from "drizzle-orm";
 import { currentUser } from "@/lib/auth";
 import { db } from "@/db";
-import { stores, users } from "@/db/schema";
+import { stores, users, wholesalers } from "@/db/schema";
+import { isPremium } from "@/lib/dto";
 
 export class HttpError extends Error {
   constructor(
@@ -40,11 +41,30 @@ export function route<C = unknown>(handler: Handler<C>) {
 
 export const ok = (data: unknown, status = 200) => NextResponse.json(data, { status });
 
-export async function requireUser(role?: "customer" | "vendor") {
+const ROLE_ERROR: Record<string, string> = {
+  vendor: "Vendor account required",
+  customer: "Customer account required",
+  wholesaler: "Wholesaler account required",
+};
+
+export async function requireUser(role?: "customer" | "vendor" | "wholesaler") {
   const user = await currentUser();
   if (!user) fail(401, "Please log in to continue");
-  if (role && user.role !== role) fail(403, role === "vendor" ? "Vendor account required" : "Customer account required");
+  if (role && user.role !== role) fail(403, ROLE_ERROR[role]);
   return user;
+}
+
+/** Wholesaler helper: returns the logged-in wholesaler profile. */
+export async function requireWholesaler() {
+  const user = await requireUser("wholesaler");
+  const rows = await db.select().from(wholesalers).where(eq(wholesalers.userId, user.id)).limit(1);
+  if (!rows[0]) fail(404, "Wholesaler profile not found for this account");
+  return { user, wholesaler: rows[0] };
+}
+
+/** Premium-only gate for vendor features that touch wholesalers. */
+export function requirePremium(store: { plan: string; planExpiresAt: Date | null }) {
+  if (!isPremium(store)) fail(402, "Upgrade to Premium to use wholesalers");
 }
 
 /** Vendor helper: returns the logged-in vendor and their store. */

@@ -1,14 +1,18 @@
 import { eq, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { db } from "@/db";
-import { adCampaigns, extraServices, messages, orderItems, orderServices, orders, payments, products, stores, threads, users } from "@/db/schema";
+import { adCampaigns, extraServices, messages, orderItems, orderServices, orders, payments, products, restockLines, restockRequests, stores, threads, users, wholesalerProducts, wholesalers } from "@/db/schema";
 import { hashPassword } from "@/lib/auth";
-import { DEMO_CAMPAIGNS, DEMO_CUSTOMERS, DEMO_STORES, DEMO_VENDORS } from "@/lib/seed-data";
-import { gstInclusive, quoteAd } from "@/lib/pricing";
+import { DEMO_CAMPAIGNS, DEMO_CUSTOMERS, DEMO_STORES, DEMO_VENDORS, DEMO_WHOLESALERS } from "@/lib/seed-data";
+import { gstInclusive, premiumQuote, quoteAd } from "@/lib/pricing";
+import { geoFor } from "@/lib/ncr";
 import { istAt, istParts } from "@/lib/time";
 
 const VENDOR_PASSWORD = "vendor123";
 const CUSTOMER_PASSWORD = "customer123";
+const WHOLESALER_PASSWORD = "wholesaler123";
+/** Index of the demo store that starts on the Premium plan (FreshDaily Kirana, vendor1). */
+const PREMIUM_STORE = 0;
 
 /** Next occurrence of an IST wall-clock time at least 30 minutes away. */
 function nextTimeAt(now: Date, h: number, m = 0) {
@@ -30,6 +34,7 @@ export async function seedDemo() {
   const month = istParts(now).m;
   const vendorHash = await hashPassword(VENDOR_PASSWORD);
   const customerHash = await hashPassword(CUSTOMER_PASSWORD);
+  const wholesalerHash = await hashPassword(WHOLESALER_PASSWORD);
 
   await db.transaction(async (tx) => {
     const vendors = await tx
@@ -41,10 +46,16 @@ export async function seedDemo() {
       .values(DEMO_CUSTOMERS.map((c) => ({ email: c.email, name: c.name, phone: c.phone, role: "customer", passwordHash: customerHash })))
       .returning();
 
+    const wholesalerUsers = await tx
+      .insert(users)
+      .values(DEMO_WHOLESALERS.map((w) => ({ email: w.email, name: w.name, phone: w.phone, role: "wholesaler", passwordHash: wholesalerHash })))
+      .returning();
+
     // Stores
     const storeRows: (typeof stores.$inferSelect)[] = [];
-    for (const s of DEMO_STORES) {
+    for (const [idx, s] of DEMO_STORES.entries()) {
       const isOpen = s.schedule !== "closed-until-tomorrow";
+      const geo = geoFor(s.city, s.locality, idx + 1);
       const [row] = await tx
         .insert(stores)
         .values({
@@ -71,9 +82,51 @@ export async function seedDemo() {
           minOrder: String(s.minOrder),
           etaMinutes: s.etaMinutes,
           rating: String(s.rating),
+          lat: String(geo.lat),
+          lng: String(geo.lng),
+          plan: idx === PREMIUM_STORE ? "premium" : "basic",
+          planExpiresAt: idx === PREMIUM_STORE ? new Date(now.getTime() + 25 * 86400000) : null,
         })
         .returning();
       storeRows.push(row);
+    }
+
+    // Wholesalers and their catalogs
+    const wholesalerRows: (typeof wholesalers.$inferSelect)[] = [];
+    for (const [i, w] of DEMO_WHOLESALERS.entries()) {
+      const geo = geoFor(w.city, w.locality, i + 1);
+      const [row] = await tx
+        .insert(wholesalers)
+        .values({
+          userId: wholesalerUsers[i].id,
+          businessName: w.businessName,
+          description: w.description,
+          gstin: w.gstin,
+          phone: w.phone,
+          locality: w.locality,
+          city: w.city,
+          pincode: w.pincode,
+          lat: String(geo.lat),
+          lng: String(geo.lng),
+          rating: String(w.rating),
+          ratingCount: w.ratingCount,
+        })
+        .returning();
+      wholesalerRows.push(row);
+      await tx.insert(wholesalerProducts).values(
+        w.catalog.map((c) => ({
+          wholesalerId: row.id,
+          name: c.name,
+          category: c.category,
+          weightValue: String(c.weightValue),
+          weightUnit: c.weightUnit,
+          price: String(c.price),
+          moq: c.moq,
+          stockQty: c.stockQty,
+          grade: c.grade,
+          inStock: c.stockQty > 0,
+        })),
+      );
     }
 
     // Products and services
@@ -97,6 +150,7 @@ export async function seedDemo() {
             inStock: p.inStock ?? true,
             bargainEnabled: !!p.bargain,
             floorPrice: p.bargain ? String(p.bargain.floor) : null,
+            costPrice: p.costPrice == null ? null : String(p.costPrice),
             gstRate: p.gstRate,
           })
           .returning();
@@ -127,6 +181,51 @@ export async function seedDemo() {
         .limit(1);
       return r.id;
     };
+
+    // Premium plan purchase for the premium store
+    const planQuote = premiumQuote();
+    await tx.insert(payments).values({
+      userId: vendors[DEMO_STORES[PREMIUM_STORE].owner].id,
+      storeId: storeRows[PREMIUM_STORE].id,
+      purpose: "plan",
+      amount: String(planQuote.total),
+      method: "upi",
+      reference: ref(),
+      maskedDetails: "UPI · ve***@okaxis",
+      status: "succeeded",
+      createdAt: new Date(now.getTime() - 5 * 86400000),
+    });
+
+    // Restock: an open request to one wholesaler and a quoted request to another
+    const restockFor = async (wIndex: number, status: string, lines: { name: string; qty: number; lastCost?: number; quote?: { price: number; qty: number } }[]) => {
+      const [req] = await tx
+        .insert(restockRequests)
+        .values({ storeId: storeRows[PREMIUM_STORE].id, wholesalerId: wholesalerRows[wIndex].id, status, createdAt: new Date(now.getTime() - 3 * 3600000) })
+        .returning();
+      const product = (name: string) => DEMO_STORES[PREMIUM_STORE].products.find((p) => p.name === name);
+      for (const l of lines) {
+        const p = product(l.name);
+        await tx.insert(restockLines).values({
+          requestId: req.id,
+          productId: p ? productIds.get(`${PREMIUM_STORE}:${l.name}`) ?? null : null,
+          itemName: l.name,
+          weightLabel: p ? `${p.weightValue} ${p.weightUnit}` : null,
+          qty: l.qty,
+          lastCost: l.lastCost == null ? null : String(l.lastCost),
+          quotePrice: l.quote ? String(l.quote.price) : null,
+          quoteQty: l.quote ? l.quote.qty : null,
+          status: l.quote ? "quoted" : "requested",
+        });
+      }
+    };
+    await restockFor(0, "open", [
+      { name: "Robusta Bananas", qty: 20, lastCost: 34 },
+      { name: "Basmati Rice Premium", qty: 4, lastCost: 560 },
+    ]);
+    await restockFor(3, "quoted", [
+      { name: "Robusta Bananas", qty: 30, lastCost: 34, quote: { price: 40, qty: 30 } },
+      { name: "Basmati Rice Premium", qty: 4, lastCost: 560, quote: { price: 585, qty: 4 } },
+    ]);
 
     // Ad campaigns with mock payments (live: active right now)
     for (const c of DEMO_CAMPAIGNS) {

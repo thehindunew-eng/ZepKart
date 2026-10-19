@@ -55,6 +55,11 @@ export const stores = pgTable(
     minOrder: money("min_order").notNull().default("99"),
     etaMinutes: integer("eta_minutes").notNull().default(30),
     rating: numeric("rating", { precision: 2, scale: 1 }).default("4.5"),
+    lat: numeric("lat", { precision: 9, scale: 6 }),
+    lng: numeric("lng", { precision: 9, scale: 6 }),
+    // Vendor plan: basic (customers only) or premium (wholesaler access + restock).
+    plan: varchar("plan", { length: 12 }).notNull().default("basic"),
+    planExpiresAt: ts("plan_expires_at"),
     createdAt: ts("created_at").defaultNow().notNull(),
     updatedAt: ts("updated_at").defaultNow().notNull(),
   },
@@ -81,6 +86,8 @@ export const products = pgTable(
     bargainEnabled: boolean("bargain_enabled").notNull().default(false),
     // Hidden from customers. Offers at or above this price are accepted automatically.
     floorPrice: money("floor_price"),
+    // Last price the vendor paid a wholesaler for this item (shown to compare offers).
+    costPrice: money("cost_price"),
     gstRate: integer("gst_rate").notNull().default(5),
     createdAt: ts("created_at").defaultNow().notNull(),
     updatedAt: ts("updated_at").defaultNow().notNull(),
@@ -255,3 +262,94 @@ export const payments = pgTable("payments", {
   status: varchar("status", { length: 20 }).notNull().default("succeeded"),
   createdAt: ts("created_at").defaultNow().notNull(),
 });
+
+export const wholesalers = pgTable(
+  "wholesalers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    businessName: varchar("business_name", { length: 160 }).notNull(),
+    description: text("description"),
+    dpUrl: text("dp_url"),
+    gstin: varchar("gstin", { length: 20 }),
+    phone: varchar("phone", { length: 20 }),
+    address: text("address"),
+    locality: varchar("locality", { length: 120 }),
+    city: varchar("city", { length: 40 }).notNull().default("Delhi"),
+    pincode: varchar("pincode", { length: 6 }),
+    lat: numeric("lat", { precision: 9, scale: 6 }),
+    lng: numeric("lng", { precision: 9, scale: 6 }),
+    rating: numeric("rating", { precision: 2, scale: 1 }).notNull().default("4.2"),
+    ratingCount: integer("rating_count").notNull().default(0),
+    isVerified: boolean("is_verified").notNull().default(true),
+    createdAt: ts("created_at").defaultNow().notNull(),
+    updatedAt: ts("updated_at").defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("wholesalers_user_uidx").on(t.userId), index("wholesalers_city_idx").on(t.city)],
+);
+
+// What a wholesaler sells. Vendors compare these by item name, cheapest first.
+export const wholesalerProducts = pgTable(
+  "wholesaler_products",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    wholesalerId: uuid("wholesaler_id")
+      .notNull()
+      .references(() => wholesalers.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 160 }).notNull(),
+    category: varchar("category", { length: 60 }).notNull().default("Grocery"),
+    imageUrl: text("image_url"),
+    weightValue: numeric("weight_value", { precision: 10, scale: 3 }).notNull().default("1"),
+    weightUnit: varchar("weight_unit", { length: 10 }).notNull().default("pc"),
+    price: money("price").notNull(), // per unit, ex-GST
+    moq: integer("moq").notNull().default(1),
+    stockQty: integer("stock_qty").notNull().default(0),
+    grade: varchar("grade", { length: 2 }).notNull().default("A"), // A | B | C quality grade
+    inStock: boolean("in_stock").notNull().default(true),
+    createdAt: ts("created_at").defaultNow().notNull(),
+    updatedAt: ts("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("wholesaler_products_wh_idx").on(t.wholesalerId), index("wholesaler_products_name_idx").on(t.name)],
+);
+
+// One restock request per vendor × wholesaler. Holds the out-of-stock list sent to that wholesaler.
+export const restockRequests = pgTable(
+  "restock_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    storeId: uuid("store_id")
+      .notNull()
+      .references(() => stores.id, { onDelete: "cascade" }),
+    wholesalerId: uuid("wholesaler_id")
+      .notNull()
+      .references(() => wholesalers.id, { onDelete: "cascade" }),
+    status: varchar("status", { length: 12 }).notNull().default("open"), // open | quoted | closed
+    createdAt: ts("created_at").defaultNow().notNull(),
+    updatedAt: ts("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("restock_requests_store_idx").on(t.storeId), index("restock_requests_wh_idx").on(t.wholesalerId)],
+);
+
+export const restockLines = pgTable(
+  "restock_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => restockRequests.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    itemName: varchar("item_name", { length: 160 }).notNull(),
+    weightLabel: varchar("weight_label", { length: 40 }),
+    qty: integer("qty").notNull(),
+    lastCost: money("last_cost"),
+    quotePrice: money("quote_price"), // wholesaler's unit price
+    quoteQty: integer("quote_qty"), // how many they can supply
+    // requested | quoted | declined | accepted | received
+    status: varchar("status", { length: 12 }).notNull().default("requested"),
+    createdAt: ts("created_at").defaultNow().notNull(),
+    updatedAt: ts("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("restock_lines_request_idx").on(t.requestId), index("restock_lines_product_idx").on(t.productId)],
+);

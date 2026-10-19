@@ -7,11 +7,12 @@ import { ArrowLeft, Phone, Truck, Footprints, Wallet, Film, Clock, MapPin } from
 import { useApi } from "@/hooks/useApi";
 import { useCart } from "@/components/CartProvider";
 import { ProductCard, useCartActions, type ShopProduct, type ShopService } from "@/components/cards";
-import { Badge, Button, EmptyState, Glass, Skeleton, StatusPill } from "@/components/ui";
+import { Badge, Button, EmptyState, Glass, NavigateButton, Skeleton, StatusPill } from "@/components/ui";
+import { useAuth } from "@/components/AuthProvider";
 import { CATEGORY_EMOJI, money } from "@/lib/utils";
 
 type StoreResp = {
-  store: { id: string; shopName: string; description: string | null; dpUrl: string | null; coverUrl: string | null; whatsapp: string | null; address: string | null; locality: string | null; city: string; category: string; isOpen: boolean; nextOpeningAt: string | null; nextClosingAt: string | null; openingHours: string | null; pickupAvailable: boolean; deliveryAvailable: boolean; deliveryFee: number; freeDeliveryAbove: number; minOrder: number; etaMinutes: number; rating: number };
+  store: { lat: number | null; lng: number | null; id: string; shopName: string; description: string | null; dpUrl: string | null; coverUrl: string | null; whatsapp: string | null; address: string | null; locality: string | null; city: string; category: string; isOpen: boolean; nextOpeningAt: string | null; nextClosingAt: string | null; openingHours: string | null; pickupAvailable: boolean; deliveryAvailable: boolean; deliveryFee: number; freeDeliveryAbove: number; minOrder: number; etaMinutes: number; rating: number };
   products: ShopProduct[];
   services: ShopService[];
   ads: { id: string; title: string; videoUrl: string; durationSec: number }[];
@@ -21,6 +22,7 @@ export default function StorePage() {
   const { id } = useParams<{ id: string }>();
   const { data, loading } = useApi<StoreResp>(`/api/stores/${id}`, { poll: 15000 });
   const { cart, count } = useCart();
+  const { user } = useAuth();
   const { addService } = useCartActions();
   const [cat, setCat] = useState<string>("All");
   const [q, setQ] = useState("");
@@ -60,11 +62,14 @@ export default function StorePage() {
               {s.openingHours && <Badge tone="gray"><Clock className="h-3 w-3" /> {s.openingHours}</Badge>}
             </div>
           </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {user?.role === "customer" && s.pickupAvailable && <NavigateButton lat={s.lat} lng={s.lng} />}
           {s.whatsapp && (
             <a href={`https://wa.me/91${s.whatsapp.replace(/\D/g, "").slice(-10)}`} target="_blank" rel="noreferrer" className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full bg-emerald-600 px-5 text-[14px] font-bold text-white shadow-lg transition hover:bg-emerald-700">
               <Phone className="h-4 w-4" /> WhatsApp shop
             </a>
           )}
+          </div>
         </div>
       </Glass>
 
@@ -74,7 +79,7 @@ export default function StorePage() {
           <div className="no-scrollbar -mx-4 flex gap-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
             {data.ads.map((a) => (
               <Glass key={a.id} className="w-64 shrink-0 overflow-hidden !rounded-[24px]">
-                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                { }
                 <video src={a.videoUrl} muted autoPlay loop playsInline className="aspect-[9/12] max-h-72 w-full bg-black object-cover" />
                 <p className="p-3 text-[13.5px] font-bold">{a.title}</p>
               </Glass>

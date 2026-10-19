@@ -3,21 +3,28 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Store, ShoppingBag, Loader2, Mail, Lock, User, Phone, MapPin } from "lucide-react";
+import { Loader2, Mail, Lock, User, Phone, Store, Warehouse, ShoppingBag, ArrowRight } from "lucide-react";
 import { api, ApiError } from "@/hooks/useApi";
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
-import { Button, Field, Glass } from "@/components/ui";
+import { Button, Field } from "@/components/ui";
 import { Logo } from "@/components/ShopHeader";
 import { CITIES } from "@/lib/ncr";
 import { cn } from "@/lib/utils";
 
+type Role = "customer" | "vendor" | "wholesaler";
+
 const DEMO = {
-  vendor: { email: "vendor1@zepkart.demo", password: "vendor123", label: "Vendor" },
-  customer: { email: "customer@zepkart.demo", password: "customer123", label: "Customer" },
+  customer: { email: "customer@zepkart.demo", password: "customer123", label: "Customer", icon: ShoppingBag },
+  vendor: { email: "vendor1@zepkart.demo", password: "vendor123", label: "Vendor", icon: Store },
+  wholesaler: { email: "wholesaler1@zepkart.demo", password: "wholesaler123", label: "Wholesaler", icon: Warehouse },
 } as const;
 
-const DEFAULT_PIN: Record<string, string> = { Delhi: "110001", Noida: "201301", Gurugram: "122002" };
+const ROLE_COPY: Record<Role, { label: string; hint: string; shopLabel: string }> = {
+  customer: { label: "Customer", hint: "Shop nearby stores and compare prices.", shopLabel: "" },
+  vendor: { label: "Vendor", hint: "Run your shop, inventory and bookings.", shopLabel: "Shop name" },
+  wholesaler: { label: "Wholesaler", hint: "Quote shops and list your catalog.", shopLabel: "Business name" },
+};
 
 function AuthInner() {
   const router = useRouter();
@@ -26,14 +33,16 @@ function AuthInner() {
   const { toast } = useToast();
   const next = params.get("next");
   const [mode, setMode] = useState<"login" | "signup">(params.get("mode") === "signup" ? "signup" : "login");
-  const [role, setRole] = useState<"customer" | "vendor">(params.get("role") === "vendor" ? "vendor" : "customer");
+  const initialRole = params.get("role");
+  const [role, setRole] = useState<Role>(initialRole === "vendor" || initialRole === "wholesaler" ? initialRole : "customer");
   const [busy, setBusy] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", shopName: "", city: "Delhi" as (typeof CITIES)[number] });
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", shopName: "", gstin: "", city: "Delhi" as (typeof CITIES)[number] });
   const [err, setErr] = useState<string | null>(null);
 
-  const finish = async (role: string) => {
+  const finish = async (r: string) => {
     await refresh();
-    const dest = next && next.startsWith("/") && !next.startsWith("//") ? next : role === "vendor" ? "/vendor" : "/";
+    const fallback = r === "vendor" ? "/vendor" : r === "wholesaler" ? "/wholesaler" : "/";
+    const dest = next && next.startsWith("/") && !next.startsWith("//") ? next : fallback;
     router.replace(dest);
     router.refresh();
   };
@@ -42,7 +51,7 @@ function AuthInner() {
     try {
       return await api<{ user: { role: string } }>("/api/auth/login", { json: { email, password } });
     } catch (e) {
-      // The demo accounts may not exist yet on a fresh database. Seed once, then retry.
+      // Demo accounts may not exist on a fresh database. Seed once, then retry.
       if (e instanceof ApiError && (e.status === 401 || e.status === 404)) {
         await api("/api/seed", { method: "POST" });
         return await api<{ user: { role: string } }>("/api/auth/login", { json: { email, password } });
@@ -77,6 +86,11 @@ function AuthInner() {
           body.shopName = form.shopName;
           body.city = form.city;
         }
+        if (role === "wholesaler") {
+          body.shopName = form.shopName;
+          body.gstin = form.gstin || undefined;
+          body.city = form.city;
+        }
         const r = await api<{ user: { role: string } }>("/api/auth/signup", { json: body });
         toast("Welcome to ZepKart");
         await finish(r.user.role);
@@ -87,98 +101,124 @@ function AuthInner() {
     }
   };
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value });
-
   return (
-    <div className="grid min-h-[80vh] items-center gap-8 lg:grid-cols-[1fr_440px] lg:gap-14">
-      <div className="space-y-6 text-center lg:text-left">
-        <Logo />
-        <h1 className="text-[40px] font-black leading-[1.02] tracking-[-0.03em] sm:text-[56px]">Quick commerce for <span className="bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Delhi NCR.</span></h1>
-        <p className="mx-auto max-w-md text-[16px] text-ink/65 lg:mx-0">Delhi, Noida and Gurugram stores, one app.</p>
-        <div className="flex flex-wrap justify-center gap-2 lg:justify-start">
-          {CITIES.map((c) => (
-            <span key={c} className="glass-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-bold"><MapPin className="h-3.5 w-3.5" /> {c}</span>
-          ))}
+    <div className="min-h-screen bg-[#f6f7f9]">
+      <header className="border-b border-gray-200 bg-white">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+          <Logo />
+          <Link href="/" className="text-[13px] font-bold text-ink/60 hover:text-ink">Browse without logging in</Link>
         </div>
-      </div>
+      </header>
+      <div className="mx-auto grid max-w-6xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_440px] lg:py-12">
+        <section className="flex flex-col justify-center">
+          <p className="text-[12px] font-black uppercase tracking-[0.18em] text-leaf-deep">Delhi · Noida · Gurugram</p>
+          <h1 className="mt-2 text-[34px] font-black leading-tight tracking-tight sm:text-[44px]">Groceries from stores near you, at the best price.</h1>
+          <p className="mt-3 max-w-lg text-[15px] text-ink/65">Shops, customers and wholesalers, all on one app.</p>
 
-      <Glass strong className="rise space-y-6 !rounded-[32px] p-6 sm:p-8">
-        <div className="space-y-3">
-          <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-ink/50">Try a demo account</p>
-          <div className="grid grid-cols-2 gap-3">
-            <button disabled={!!busy} onClick={() => demoLogin("vendor")} className="btn-dark flex h-14 items-center justify-center gap-2 rounded-2xl text-[14.5px] font-bold disabled:opacity-60">
-              {busy === "vendor" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Store className="h-4 w-4" />} Login as Vendor
-            </button>
-            <button disabled={!!busy} onClick={() => demoLogin("customer")} className="btn-gold flex h-14 items-center justify-center gap-2 rounded-2xl text-[14.5px] font-bold disabled:opacity-60">
-              {busy === "customer" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />} Login as Customer
-            </button>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            {(Object.keys(DEMO) as (keyof typeof DEMO)[]).map((k) => {
+              const D = DEMO[k];
+              const Icon = D.icon;
+              return (
+                <button
+                  key={k}
+                  disabled={!!busy}
+                  onClick={() => demoLogin(k)}
+                  className="group flex flex-col items-start gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-left transition hover:border-gray-300 hover:shadow-md disabled:opacity-60"
+                >
+                  <span className="grid h-10 w-10 place-items-center rounded-xl bg-leaf/10 text-leaf-deep"><Icon className="h-5 w-5" /></span>
+                  <span className="text-[15px] font-black">{D.label} demo</span>
+                  <span className="flex w-full items-center justify-between text-[12px] font-bold text-ink/55">
+                    One click {busy === k ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />}
+                  </span>
+                </button>
+              );
+            })}
           </div>
-        </div>
+          {err && !busy && <p className="mt-4 text-[13px] font-semibold text-red-700">{err}</p>}
+        </section>
 
-        <div className="flex items-center gap-3 text-[12px] font-semibold text-ink/40">
-          <span className="h-px flex-1 bg-ink/10" /> or <span className="h-px flex-1 bg-ink/10" />
-        </div>
+        <section className="rounded-3xl border border-gray-200 bg-white p-6 sm:p-8">
+          <div className="grid grid-cols-2 rounded-full bg-gray-100 p-1 text-[13.5px] font-bold">
+            {(["login", "signup"] as const).map((m) => (
+              <button key={m} onClick={() => setMode(m)} className={cn("rounded-full py-2 transition", mode === m ? "bg-white text-ink shadow-sm" : "text-ink/55")}>
+                {m === "login" ? "Log in" : "Sign up"}
+              </button>
+            ))}
+          </div>
 
-        <div className="glass-pill grid grid-cols-2 rounded-full p-1 text-[13px] font-bold">
-          {(["login", "signup"] as const).map((m) => (
-            <button key={m} onClick={() => setMode(m)} className={cn("rounded-full py-2 transition", mode === m ? "bg-white text-ink shadow" : "text-ink/60")}>
-              {m === "login" ? "Log in" : "Create account"}
-            </button>
-          ))}
-        </div>
-
-        <form onSubmit={submit} className="space-y-4">
           {mode === "signup" && (
-            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-white/40 p-1 text-[13px] font-bold">
-              {(["customer", "vendor"] as const).map((r) => (
-                <button type="button" key={r} onClick={() => setRole(r)} className={cn("rounded-xl py-2 capitalize transition", role === r ? "bg-ink text-white" : "text-ink/65")}>{r === "customer" ? "Shopper" : "Shop owner"}</button>
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              {(["customer", "vendor", "wholesaler"] as Role[]).map((r) => (
+                <button key={r} onClick={() => setRole(r)} className={cn("rounded-xl border px-2 py-2.5 text-[12.5px] font-bold transition", role === r ? "border-ink bg-ink text-white" : "border-gray-200 text-ink/70 hover:border-gray-300")}>
+                  {ROLE_COPY[r].label}
+                </button>
               ))}
             </div>
           )}
-          {mode === "signup" && (
-            <Field label="Full name">
-              <div className="relative"><User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" /><input className="field pl-10" required value={form.name} onChange={set("name")} autoComplete="name" /></div>
-            </Field>
-          )}
-          <Field label="Email">
-            <div className="relative"><Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" /><input className="field pl-10" type="email" required value={form.email} onChange={set("email")} autoComplete="email" /></div>
-          </Field>
-          <Field label="Password" hint={mode === "signup" ? "At least 6 characters" : undefined}>
-            <div className="relative"><Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" /><input className="field pl-10" type="password" required minLength={mode === "signup" ? 6 : 1} value={form.password} onChange={set("password")} autoComplete={mode === "signup" ? "new-password" : "current-password"} /></div>
-          </Field>
-          {mode === "signup" && (
-            <>
-              <Field label="Mobile number">
-                <div className="relative"><Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" /><input className="field pl-10" inputMode="tel" required={role === "vendor"} value={form.phone} onChange={set("phone")} placeholder="10-digit Indian mobile" /></div>
+          {mode === "signup" && <p className="mt-2 text-[12.5px] text-ink/55">{ROLE_COPY[role].hint}</p>}
+
+          <form onSubmit={submit} className="mt-5 space-y-4">
+            {mode === "signup" && (
+              <Field label={role === "wholesaler" ? "Contact name" : "Full name"}>
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" />
+                  <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="field pl-10" autoComplete="name" />
+                </div>
               </Field>
-              {role === "vendor" && (
-                <>
-                  <Field label="Shop name"><input className="field" required value={form.shopName} onChange={set("shopName")} /></Field>
-                  <Field label="City">
-                    <select className="field" value={form.city} onChange={set("city")}>
-                      {CITIES.map((c) => <option key={c} value={c}>{c} ({DEFAULT_PIN[c]})</option>)}
-                    </select>
+            )}
+            <Field label="Email">
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" />
+                <input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="field pl-10" autoComplete="email" />
+              </div>
+            </Field>
+            <Field label="Password" hint={mode === "signup" ? "At least 6 characters" : undefined}>
+              <div className="relative">
+                <Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" />
+                <input required type="password" minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="field pl-10" autoComplete={mode === "login" ? "current-password" : "new-password"} />
+              </div>
+            </Field>
+            {mode === "signup" && (
+              <>
+                <Field label="Phone">
+                  <div className="relative">
+                    <Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" />
+                    <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="field pl-10" inputMode="tel" />
+                  </div>
+                </Field>
+                {role !== "customer" && (
+                  <>
+                    <Field label={ROLE_COPY[role].shopLabel}>
+                      <input required value={form.shopName} onChange={(e) => setForm({ ...form, shopName: e.target.value })} className="field" />
+                    </Field>
+                    <Field label="City">
+                      <select value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value as (typeof CITIES)[number] })} className="field">
+                        {CITIES.map((c) => <option key={c}>{c}</option>)}
+                      </select>
+                    </Field>
+                  </>
+                )}
+                {role === "wholesaler" && (
+                  <Field label="GSTIN (optional)">
+                    <input value={form.gstin} onChange={(e) => setForm({ ...form, gstin: e.target.value })} className="field uppercase" maxLength={15} />
                   </Field>
-                </>
-              )}
-            </>
-          )}
-          {err && <p role="alert" className="rounded-2xl bg-red-50/90 px-4 py-2.5 text-[13px] font-semibold text-red-800">{err}</p>}
-          <Button type="submit" block size="lg" loading={busy === "form"} disabled={!!busy}>
-            {mode === "login" ? "Log in" : "Create account"}
-          </Button>
-        </form>
-        <p className="text-center text-[12.5px] text-ink/55">
-          <Link href="/" className="font-bold text-ink hover:underline">Continue browsing</Link>
-        </p>
-      </Glass>
+                )}
+              </>
+            )}
+            <Button type="submit" variant="dark" size="lg" block loading={busy === "form"}>
+              {mode === "login" ? "Log in" : `Create ${ROLE_COPY[role].label.toLowerCase()} account`}
+            </Button>
+          </form>
+        </section>
+      </div>
     </div>
   );
 }
 
 export default function AuthPage() {
   return (
-    <Suspense fallback={<div className="grid min-h-[60vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
+    <Suspense fallback={<div className="grid min-h-screen place-items-center"><Loader2 className="h-5 w-5 animate-spin" /></div>}>
       <AuthInner />
     </Suspense>
   );

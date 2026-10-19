@@ -6,33 +6,10 @@ import { fail, ok, requireVendor, route } from "@/lib/api";
 import { adPay } from "@/lib/validators";
 import { num } from "@/lib/dto";
 import { campaignDto } from "@/lib/campaigns";
+import { maskedPayment } from "@/lib/checkout";
 
 export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
-
-/** Luhn checksum for card numbers. */
-function luhn(num: string) {
-  let sum = 0;
-  let alt = false;
-  for (let i = num.length - 1; i >= 0; i--) {
-    let d = Number(num[i]);
-    if (alt) {
-      d *= 2;
-      if (d > 9) d -= 9;
-    }
-    sum += d;
-    alt = !alt;
-  }
-  return sum % 10 === 0;
-}
-
-function cardBrand(n: string) {
-  if (n.startsWith("4")) return "Visa";
-  if (/^5[1-5]/.test(n)) return "Mastercard";
-  if (/^(60|65|8[1-9])/.test(n) || /^352/.test(n)) return "RuPay";
-  if (/^3[47]/.test(n)) return "Amex";
-  return "Card";
-}
 
 /**
  * Mock checkout: validates the details and records a successful payment.
@@ -50,17 +27,7 @@ export const POST = route<Ctx>(async (req, ctx) => {
   if (!c) fail(404, "Campaign not found");
   if (c.status !== "draft") fail(409, "This campaign is already paid");
 
-  let masked: string;
-  if (body.method === "upi") {
-    const [user, bank] = body.upiId.split("@");
-    masked = `UPI · ${user.slice(0, 2)}***@${bank}`;
-  } else {
-    if (!luhn(body.cardNumber)) fail(400, "Card number looks invalid");
-    const [mm, yy] = body.expiry.split("/").map(Number);
-    const expEnd = new Date(Date.UTC(2000 + yy, mm, 1));
-    if (expEnd <= new Date()) fail(400, "This card has expired");
-    masked = `${cardBrand(body.cardNumber)} · •••• ${body.cardNumber.slice(-4)}`;
-  }
+  const masked = maskedPayment(body);
 
   const now = new Date();
   const endsAt = new Date(now.getTime() + c.planDays * 86400000);

@@ -1,4 +1,4 @@
-import type { products, stores, extraServices } from "@/db/schema";
+import type { products, stores, extraServices, wholesalers } from "@/db/schema";
 import { gstInclusive } from "@/lib/pricing";
 
 type Product = typeof products.$inferSelect;
@@ -76,6 +76,8 @@ export function publicStore(s: Store) {
     minOrder: num(s.minOrder),
     etaMinutes: s.etaMinutes,
     rating: num(s.rating),
+    lat: s.lat == null ? null : Number(s.lat),
+    lng: s.lng == null ? null : Number(s.lng),
   };
 }
 
@@ -93,11 +95,73 @@ export function publicService(s: Service) {
   };
 }
 
+/** Premium is active when the plan is premium and not yet expired. */
+export function isPremium(s: { plan: string; planExpiresAt: Date | null }) {
+  return s.plan === "premium" && !!s.planExpiresAt && s.planExpiresAt.getTime() > Date.now();
+}
+
 export function vendorStore(s: Store) {
   return {
     ...publicStore(s),
     phone: s.phone,
     ownerId: s.ownerId,
     updatedAt: s.updatedAt,
+    plan: isPremium(s) ? "premium" : "basic",
+    planExpiresAt: s.planExpiresAt,
+  };
+}
+
+/** Wholesaler profile. Contact details are only shown to the wholesaler themself. */
+export function wholesalerDto(w: typeof wholesalers.$inferSelect) {
+  return {
+    id: w.id,
+    businessName: w.businessName,
+    description: w.description,
+    dpUrl: w.dpUrl,
+    gstin: w.gstin,
+    phone: w.phone,
+    address: w.address,
+    locality: w.locality,
+    city: w.city,
+    pincode: w.pincode,
+    lat: w.lat == null ? null : Number(w.lat),
+    lng: w.lng == null ? null : Number(w.lng),
+    rating: num(w.rating),
+    ratingCount: w.ratingCount,
+    isVerified: w.isVerified,
+  };
+}
+
+/** Directory entry shown to premium vendors. No phone, address, or GSTIN. */
+export function publicWholesaler(w: typeof wholesalers.$inferSelect) {
+  return {
+    id: w.id,
+    businessName: w.businessName,
+    description: w.description,
+    dpUrl: w.dpUrl,
+    locality: w.locality,
+    city: w.city,
+    lat: w.lat == null ? null : Number(w.lat),
+    lng: w.lng == null ? null : Number(w.lng),
+    rating: num(w.rating),
+    ratingCount: w.ratingCount,
+    isVerified: w.isVerified,
+  };
+}
+
+export function wholesalerProductDto(p: { id: string; name: string; category: string; imageUrl: string | null; weightValue: string | number; weightUnit: string; price: string | number; moq: number; stockQty: number; grade: string; inStock: boolean }) {
+  return {
+    id: p.id,
+    name: p.name,
+    category: p.category,
+    imageUrl: p.imageUrl,
+    weightValue: num(p.weightValue),
+    weightUnit: p.weightUnit,
+    weightLabel: weightLabel(p.weightValue, p.weightUnit),
+    price: num(p.price),
+    moq: p.moq,
+    stockQty: p.stockQty,
+    grade: p.grade,
+    inStock: p.inStock,
   };
 }

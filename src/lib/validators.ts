@@ -21,8 +21,9 @@ export const signupSchema = z.object({
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters").max(200),
   phone: z.string().trim().max(20).optional().default(""),
-  role: z.enum(["customer", "vendor"]).default("customer"),
-  shopName: str(160).optional(),
+  role: z.enum(["customer", "vendor", "wholesaler"]).default("customer"),
+  shopName: str(160).optional(), // shop name for vendors, business name for wholesalers
+  gstin: z.string().trim().toUpperCase().optional(),
   city: z.enum(CITIES).optional(),
 });
 
@@ -152,3 +153,48 @@ export const adPay = z.discriminatedUnion("method", [
     cvv: z.string().trim().regex(/^\d{3,4}$/, "Enter the CVV"),
   }),
 ]);
+
+const gstinRule = z.string().trim().toUpperCase().regex(/^[0-9A-Z]{15}$/, "GSTIN must be 15 characters");
+
+export const wholesalerProfile = z.object({
+  businessName: str(160).min(2, "Business name is required"),
+  description: optStr(1000),
+  dpUrl: urlOrPath.optional().nullable(),
+  gstin: gstinRule.optional().nullable(),
+  phone,
+  address: optStr(300),
+  locality: optStr(120),
+  city: z.enum(CITIES),
+  pincode: z.string().trim().refine(isNcrPincode, "Use an NCR pincode (Delhi 110xxx, Noida 201xxx, Gurugram 122xxx)"),
+});
+
+export const wholesalerProfilePatch = wholesalerProfile.partial();
+
+export const wholesalerProductInput = z.object({
+  name: str(160).min(2, "Name is required"),
+  category: z.enum(CATEGORIES),
+  imageUrl: urlOrPath.optional().nullable(),
+  weightValue: z.coerce.number().min(0).max(100000),
+  weightUnit: z.enum(WEIGHT_UNITS),
+  price: money.refine((n) => n > 0, "Price must be more than 0"),
+  moq: z.coerce.number().int().min(1).max(100000),
+  stockQty: z.coerce.number().int().min(0).max(1_000_000),
+  grade: z.enum(["A", "B", "C"]),
+  inStock: z.boolean(),
+});
+
+export const wholesalerProductPatch = wholesalerProductInput.partial();
+
+export const restockCreate = z.object({
+  wholesalerIds: z.array(z.uuid()).min(1, "Pick at least one wholesaler").max(20),
+  // Optional. When omitted, every out-of-stock item is sent.
+  items: z.array(z.object({ productId: z.uuid(), qty: z.coerce.number().int().min(1).max(10000) })).optional(),
+});
+
+export const restockLineAction = z.object({ action: z.enum(["accept", "decline", "received"]) });
+
+export const restockQuotes = z.object({
+  quotes: z
+    .array(z.object({ lineId: z.uuid(), price: money.refine((n) => n > 0, "Enter a price"), qty: z.coerce.number().int().min(0).max(100000) }))
+    .min(1),
+});

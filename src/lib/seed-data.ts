@@ -17,6 +17,101 @@ export const DEMO_CUSTOMERS = [
   { email: "arjun@zepkart.demo", name: "Arjun Mehta", phone: "9871122003" },
 ];
 
+/** Wholesalers and dealers across Delhi, Noida, and Gurugram. Catalogs match out-of-stock vendor items. */
+export type DemoCatalogItem = { name: string; category: string; weightValue: number; weightUnit: string; price: number; moq: number; stockQty: number; grade: "A" | "B" | "C" };
+export type DemoWholesaler = { email: string; name: string; phone: string; businessName: string; city: "Delhi" | "Noida" | "Gurugram"; locality: string; pincode: string; description: string; rating: number; ratingCount: number; gstin: string; catalog: DemoCatalogItem[] };
+
+export const DEMO_WHOLESALERS: DemoWholesaler[] = [
+  {
+    email: "wholesaler1@zepkart.demo",
+    name: "Sunil Aggarwal",
+    phone: "9811033001",
+    businessName: "Chandni Chowk Wholesale Mart",
+    city: "Delhi",
+    locality: "Chandni Chowk",
+    pincode: "110006",
+    description: "Fruit, vegetable and grocery wholesale for Old Delhi and Central Delhi retailers.",
+    rating: 4.4,
+    ratingCount: 218,
+    gstin: "07AAACC1206D1ZM",
+    catalog: [
+      { name: "Robusta Bananas", category: "Fruits & Vegetables", weightValue: 1, weightUnit: "kg", price: 38, moq: 10, stockQty: 400, grade: "A" },
+      { name: "Onion", category: "Fruits & Vegetables", weightValue: 1, weightUnit: "kg", price: 22, moq: 25, stockQty: 1200, grade: "B" },
+      { name: "Potato", category: "Fruits & Vegetables", weightValue: 1, weightUnit: "kg", price: 19, moq: 25, stockQty: 1500, grade: "B" },
+      { name: "Desi Tomatoes", category: "Fruits & Vegetables", weightValue: 1, weightUnit: "kg", price: 28, moq: 20, stockQty: 600, grade: "A" },
+      { name: "Green Chilli", category: "Fruits & Vegetables", weightValue: 250, weightUnit: "g", price: 14, moq: 20, stockQty: 300, grade: "B" },
+      { name: "Ginger", category: "Fruits & Vegetables", weightValue: 1, weightUnit: "kg", price: 90, moq: 5, stockQty: 120, grade: "A" },
+      { name: "Chana Dal", category: "Staples", weightValue: 1, weightUnit: "kg", price: 82, moq: 10, stockQty: 260, grade: "A" },
+      { name: "Handwash Refill", category: "Personal Care", weightValue: 250, weightUnit: "ml", price: 96, moq: 24, stockQty: 180, grade: "A" },
+    ],
+  },
+  {
+    email: "wholesaler2@zepkart.demo",
+    name: "Kavita Bhardwaj",
+    phone: "9811033002",
+    businessName: "Sector 15 Bulk Foods",
+    city: "Noida",
+    locality: "Sector 15",
+    pincode: "201301",
+    description: "Dairy, eggs and packaged staples for Noida kirana and dairy shops.",
+    rating: 4.1,
+    ratingCount: 134,
+    gstin: "09AAACS4321K1Z8",
+    catalog: [
+      { name: "Robusta Bananas", category: "Fruits & Vegetables", weightValue: 1, weightUnit: "kg", price: 42, moq: 5, stockQty: 250, grade: "B" },
+      { name: "Country Eggs", category: "Meat & Eggs", weightValue: 6, weightUnit: "pc", price: 49, moq: 12, stockQty: 600, grade: "A" },
+      { name: "Brown Eggs", category: "Meat & Eggs", weightValue: 6, weightUnit: "pc", price: 46, moq: 12, stockQty: 420, grade: "A" },
+      { name: "Basmati Rice Premium", category: "Staples", weightValue: 5, weightUnit: "kg", price: 560, moq: 4, stockQty: 60, grade: "A" },
+      { name: "Toor Dal", category: "Staples", weightValue: 1, weightUnit: "kg", price: 150, moq: 10, stockQty: 200, grade: "B" },
+      { name: "Cold-Pressed Mustard Oil", category: "Staples", weightValue: 1, weightUnit: "l", price: 168, moq: 12, stockQty: 150, grade: "A" },
+      { name: "Fresh Cream", category: "Dairy & Bakery", weightValue: 200, weightUnit: "ml", price: 62, moq: 24, stockQty: 140, grade: "B" },
+      { name: "Handwash Refill", category: "Personal Care", weightValue: 250, weightUnit: "ml", price: 110, moq: 12, stockQty: 90, grade: "B" },
+    ],
+  },
+  {
+    email: "wholesaler3@zepkart.demo",
+    name: "Harpreet Singh",
+    phone: "9811033003",
+    businessName: "Sohna Road Farm Supplies",
+    city: "Gurugram",
+    locality: "Sohna Road",
+    pincode: "122018",
+    description: "Farm-direct produce, eggs and dairy for Gurugram retail.",
+    rating: 3.9,
+    ratingCount: 76,
+    gstin: "06AAACH9911Q1Z2",
+    catalog: [
+      { name: "Robusta Bananas", category: "Fruits & Vegetables", weightValue: 1, weightUnit: "kg", price: 35, moq: 20, stockQty: 500, grade: "C" },
+      { name: "Country Eggs", category: "Meat & Eggs", weightValue: 6, weightUnit: "pc", price: 41, moq: 30, stockQty: 900, grade: "C" },
+      { name: "Fresh Spinach", category: "Fruits & Vegetables", weightValue: 250, weightUnit: "g", price: 12, moq: 30, stockQty: 300, grade: "B" },
+      { name: "Fresh Paneer", category: "Dairy & Bakery", weightValue: 200, weightUnit: "g", price: 74, moq: 10, stockQty: 80, grade: "B" },
+      { name: "A2 Cow Milk", category: "Dairy & Bakery", weightValue: 1, weightUnit: "l", price: 58, moq: 20, stockQty: 400, grade: "A" },
+      { name: "Handwash Refill", category: "Personal Care", weightValue: 250, weightUnit: "ml", price: 88, moq: 36, stockQty: 260, grade: "C" },
+    ],
+  },
+  {
+    email: "wholesaler4@zepkart.demo",
+    name: "Deepak Malhotra",
+    phone: "9811033004",
+    businessName: "Rohini Dairy & Staples Co.",
+    city: "Delhi",
+    locality: "Rohini Sector 7",
+    pincode: "110085",
+    description: "Premium staples, dairy and personal care wholesale for NCR retailers.",
+    rating: 4.6,
+    ratingCount: 302,
+    gstin: "07AAACR7788L1ZP",
+    catalog: [
+      { name: "Robusta Bananas", category: "Fruits & Vegetables", weightValue: 1, weightUnit: "kg", price: 40, moq: 10, stockQty: 320, grade: "A" },
+      { name: "Basmati Rice Premium", category: "Staples", weightValue: 5, weightUnit: "kg", price: 585, moq: 2, stockQty: 120, grade: "A" },
+      { name: "Country Eggs", category: "Meat & Eggs", weightValue: 6, weightUnit: "pc", price: 46, moq: 12, stockQty: 360, grade: "B" },
+      { name: "Whole Wheat Atta", category: "Staples", weightValue: 5, weightUnit: "kg", price: 232, moq: 6, stockQty: 300, grade: "A" },
+      { name: "Filter Coffee Powder", category: "Beverages", weightValue: 500, weightUnit: "g", price: 245, moq: 6, stockQty: 90, grade: "A" },
+      { name: "Handwash Refill", category: "Personal Care", weightValue: 250, weightUnit: "ml", price: 102, moq: 24, stockQty: 220, grade: "A" },
+    ],
+  },
+];
+
 export type DemoProduct = {
   name: string;
   description: string;
@@ -27,6 +122,7 @@ export type DemoProduct = {
   weightUnit: string;
   stockQty: number;
   inStock?: boolean;
+  costPrice?: number; // last price paid to a wholesaler
   bargain?: { floor: number };
   gstRate: number;
   image: string | null;
@@ -75,9 +171,9 @@ export const DEMO_STORES: DemoStore[] = [
       { name: "Desi Tomatoes", description: "Firm, red and farm fresh. Picked this morning.", category: "Fruits & Vegetables", price: 39, mrp: 49, weightValue: 1, weightUnit: "kg", stockQty: 60, bargain: { floor: 30 }, gstRate: 0, image: U("1592924357228-91a4daadcfea") },
       { name: "A2 Cow Milk", description: "Full cream A2 milk, delivered chilled.", category: "Grocery", price: 74, mrp: 78, weightValue: 1, weightUnit: "l", stockQty: 40, gstRate: 0, image: U("1550583724-b2692b85b150") },
       { name: "Whole Wheat Atta", description: "Stone-ground chakki atta for soft rotis.", category: "Staples", price: 285, mrp: 320, weightValue: 5, weightUnit: "kg", stockQty: 25, bargain: { floor: 260 }, gstRate: 5, image: U("1574323347407-f5e1ad6d020b") },
-      { name: "Basmati Rice Premium", description: "Long grain aged basmati.", category: "Staples", price: 649, mrp: 720, weightValue: 5, weightUnit: "kg", stockQty: 12, bargain: { floor: 600 }, gstRate: 5, image: U("1586201375761-83865001e31c") },
+      { name: "Basmati Rice Premium", description: "Long grain aged basmati.", category: "Staples", price: 649, mrp: 720, weightValue: 5, weightUnit: "kg", stockQty: 0, inStock: false, costPrice: 560, bargain: { floor: 600 }, gstRate: 5, image: U("1586201375761-83865001e31c") },
       { name: "Brown Eggs", description: "Free-range brown eggs.", category: "Meat & Eggs", price: 96, mrp: 110, weightValue: 12, weightUnit: "pc", stockQty: 30, gstRate: 0, image: U("1582722872445-44dc5f7e3c8f") },
-      { name: "Robusta Bananas", description: "Ripe and sweet, sold by the dozen.", category: "Fruits & Vegetables", price: 49, mrp: 55, weightValue: 1, weightUnit: "kg", stockQty: 0, gstRate: 0, image: U("1571771894821-ce9b6c11b08e") },
+      { name: "Robusta Bananas", description: "Ripe and sweet, sold by the dozen.", category: "Fruits & Vegetables", price: 49, mrp: 55, weightValue: 1, weightUnit: "kg", stockQty: 0, costPrice: 34, gstRate: 0, image: U("1571771894821-ce9b6c11b08e") },
       { name: "Cold-Pressed Mustard Oil", description: "Kachi ghani mustard oil.", category: "Staples", price: 189, mrp: 210, weightValue: 1, weightUnit: "l", stockQty: 18, gstRate: 5, image: U("1474979266404-7eaacbcd87c5") },
       { name: "Multigrain Cookies", description: "Baked with oats, ragi and jowar.", category: "Snacks", price: 149, mrp: 175, weightValue: 300, weightUnit: "g", stockQty: 22, gstRate: 18, image: U("1499636136210-6f4ee915583e") },
       { name: "Filter Coffee Powder", description: "Dark roast coffee with chicory.", category: "Beverages", price: 325, mrp: 360, weightValue: 500, weightUnit: "g", stockQty: 9, gstRate: 5, image: U("1559056199-641a0ac8b55e") },
