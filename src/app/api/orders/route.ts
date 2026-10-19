@@ -1,86 +1,87 @@
-import { NextResponse } from "next/server";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { orders, products, stores, facilities } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
-import { sessionFromRequest } from "@/lib/auth";
+import { orderItems, orderServices, orders, stores } from "@/db/schema";
+import { fail, ok, requireUser, route } from "@/lib/api";
+import { orderCreate } from "@/lib/validators";
+import { createOrderRecord, priceOrder } from "@/lib/orders";
+import { refreshStore } from "@/lib/store-status";
+import { isNcrPincode } from "@/lib/ncr";
+import { num } from "@/lib/dto";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: Request) {
-  const session = sessionFromRequest(req);
-  if (!session) return NextResponse.json({ error: "Login required" }, { status: 401 });
-  const { searchParams } = new URL(req.url);
-  const storeId = searchParams.get("storeId");
-  let rows = await db.select().from(orders).orderBy(desc(orders.createdAt));
-  if (session.role === "customer") rows = rows.filter((o) => o.customerId === session.id);
-  else if (session.role === "vendor") {
-    const myStores = await db.select().from(stores).where(eq(stores.ownerId, session.id));
-    const ids = new Set(myStores.map((s) => s.id));
-    rows = rows.filter((o) => ids.has(o.storeId));
-  }
-  if (storeId) rows = rows.filter((o) => o.storeId === storeId);
-
-  const allProducts = await db.select().from(products);
-  const pmap = new Map(allProducts.map((p) => [p.id, p]));
-  const allStores = await db.select().from(stores);
-  const smap = new Map(allStores.map((s) => [s.id, s]));
-  const allFac = await db.select().from(facilities);
-  const fmap = new Map(allFac.map((f) => [f.id, f]));
-  return NextResponse.json({
-    orders: rows.slice(0, 200).map((o) => ({
-      ...o,
-      product: o.productId ? pmap.get(o.productId) ?? null : null,
-      store: smap.get(o.storeId) ?? null,
-      facility: o.facilityId ? fmap.get(o.facilityId) ?? null : null,
-    })),
-  });
+async function withLines(list: (typeof orders.$inferSelect)[]) {
+  if (!list.length) return [];
+  const ids = list.map((o) => o.id);
+  const [items, services, storeRows] = await Promise.all([
+    db.select().from(orderItems).where(inArray(orderItems.orderId, ids)),
+    db.select().from(orderServices).where(inArray(orderServices.orderId, ids)),
+    db.select({ id: stores.id, shopName: stores.shopName, whatsapp: stores.whatsapp, locality: stores.locality, city: stores.city }).from(stores).where(inArray(stores.id, list.map((o) => o.storeId))),
+  ]);
+  return list.map((o) => ({
+    id: o.id,
+    storeId: o.storeId,
+    store: storeRows.find((s) => s.id === o.storeId) ?? null,
+    customerName: o.customerName,
+    phone: o.phone,
+    fulfillment: o.fulfillment,
+    address: o.address,
+    pincode: o.pincode,
+    note: o.note,
+    status: o.status,
+    subtotal: num(o.subtotal),
+    servicesTotal: num(o.servicesTotal),
+    deliveryFee: num(o.deliveryFee),
+    gstAmount: num(o.gstAmount),
+    total: num(o.total),
+    rejectReason: o.rejectReason,
+    etaMinutes: o.etaMinutes,
+    createdAt: o.createdAt,
+    updatedAt: o.updatedAt,
+    items: items.filter((i) => i.orderId === o.id).map((i) => ({ id: i.id, productId: i.productId, name: i.name, unitPrice: num(i.unitPrice), listPrice: num(i.listPrice), qty: i.qty, gstRate: i.gstRate, gstAmount: num(i.gstAmount), lineTotal: num(i.lineTotal), agreed: i.agreed })),
+    services: services.filter((s) => s.orderId === o.id).map((s) => ({ id: s.id, title: s.title, unitPrice: num(s.unitPrice), qty: s.qty, gstRate: s.gstRate, gstAmount: num(s.gstAmount), lineTotal: num(s.lineTotal) })),
+  }));
 }
 
-export async function POST(req: Request) {
-  const session = sessionFromRequest(req);
-  if (!session) return NextResponse.json({ error: "Login required" }, { status: 401 });
-  const body = await req.json();
-  const { storeId, productId, facilityId, qty, fulfillment, phone, address, note, unitPrice } = body;
-  if (!storeId) return NextResponse.json({ error: "storeId required" }, { status: 400 });
-  const q = Math.max(1, Math.min(50, Number(qty ?? 1)));
-  let price = Number(unitPrice ?? 0);
-  let title = "";
-  if (productId) {
-    const p = await db.select().from(products).where(eq(products.id, productId)).limit(1);
-    if (!p.length) return NextResponse.json({ error: "Product not found" }, { status: 404 });
-    if (p[0].status === "oos") return NextResponse.json({ error: "Item is out of stock right now" }, { status: 400 });
-    if (p[0].stockQty < q) return NextResponse.json({ error: `Only ${p[0].stockQty} left in stock` }, { status: 400 });
-    price = Number(p[0].price);
-    title = p[0].name;
-    // decrement stock optimistically
-    await db.update(products).set({ stockQty: p[0].stockQty - q, status: p[0].stockQty - q <= 0 ? "oos" : p[0].status, updatedAt: new Date() }).where(eq(products.id, productId));
-  } else if (facilityId) {
-    const f = await db.select().from(facilities).where(eq(facilities.id, facilityId)).limit(1);
-    if (!f.length) return NextResponse.json({ error: "Facility not found" }, { status: 404 });
-    price = Number(f[0].price);
-    title = f[0].title;
+/** Customers see their bookings; vendors see bookings for their store. */
+export const GET = route(async (req) => {
+  const user = await requireUser();
+  const url = new URL(req.url);
+  const status = url.searchParams.get("status");
+  const conds = [];
+  if (user.role === "vendor") {
+    const [store] = await db.select({ id: stores.id }).from(stores).where(eq(stores.ownerId, user.id)).limit(1);
+    if (!store) fail(404, "Store not found");
+    conds.push(eq(orders.storeId, store.id));
+  } else {
+    conds.push(eq(orders.customerId, user.id));
   }
-  if (body.bargainPrice) price = Number(body.bargainPrice);
-  const st = await db.select().from(stores).where(eq(stores.id, storeId)).limit(1);
-  const fee = fulfillment === "delivery" ? Number(st[0]?.deliveryFee ?? 0) : 0;
-  const total = price * q + fee;
-  const inserted = await db
-    .insert(orders)
-    .values({
-      storeId,
-      productId: productId || null,
-      facilityId: facilityId || null,
-      customerId: session.id,
-      customerName: session.name,
-      qty: q,
-      unitPrice: String(price),
-      total: String(total),
-      fulfillment: fulfillment || "delivery",
-      status: "pending",
-      phone: phone || session.phone || null,
-      address: address || null,
-      note: note ? `${title ? title + " — " : ""}${String(note)}` : title || null,
-    })
-    .returning();
-  return NextResponse.json({ order: inserted[0] });
-}
+  if (status) conds.push(eq(orders.status, status));
+  const rows = await db
+    .select()
+    .from(orders)
+    .where(and(...conds))
+    .orderBy(desc(orders.createdAt))
+    .limit(200);
+  return ok({ orders: await withLines(rows) });
+});
+
+export const POST = route(async (req) => {
+  const user = await requireUser("customer");
+  const body = orderCreate.parse(await req.json());
+  if (body.fulfillment === "delivery") {
+    if (!body.address || body.address.length < 5) fail(400, "Enter your delivery address");
+    if (!body.pincode || !isNcrPincode(body.pincode)) fail(400, "Delivery is available in Delhi, Noida and Gurugram pincodes only");
+  }
+  if (!body.items.length && !body.services.length) fail(400, "Your basket is empty");
+  const [row] = await db.select().from(stores).where(eq(stores.id, body.storeId)).limit(1);
+  if (!row) fail(404, "Store not found");
+  const store = await refreshStore(row);
+  if (!store.isOpen) fail(409, "This store is closed right now");
+
+  const priced = await priceOrder(store, user.id, body);
+  if (priced.issues.length) fail(409, priced.issues[0]);
+  const order = await createOrderRecord(store, user, body, priced);
+  const [full] = await withLines([order]);
+  return ok({ order: full }, 201);
+});

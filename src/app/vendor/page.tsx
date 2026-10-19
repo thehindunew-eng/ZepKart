@@ -1,149 +1,132 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useAuth } from "@/components/AuthProvider";
-import { Skeleton } from "@/components/ui";
-import { inr, timeAgo } from "@/lib/utils";
+import { ArrowRight, Megaphone, Receipt, MessageCircle, Boxes, Sparkles, Clock } from "lucide-react";
+import { useApi } from "@/hooks/useApi";
+import { useVendorGate } from "@/components/vendor/useVendorData";
+import { StatusToggle } from "@/components/vendor/StatusToggle";
+import { Badge, Button, EmptyState, Glass, Skeleton, VisitStoreButton } from "@/components/ui";
+import { money } from "@/lib/utils";
+import { STATUS_LABEL } from "@/lib/order-status";
+import { formatDateTimeIst } from "@/lib/time";
+
+type Overview = {
+  store: import("@/components/AuthProvider").VendorStore;
+  stats: { newBookings: number; todaySales: number; todayOrders: number; unreadChats: number };
+  recentOrders: { id: string; customerName: string; fulfillment: string; status: string; total: number; createdAt: string }[];
+  inventory: { total: number; inStock: number; low: number; outOfStock: number };
+  ad: { id: string; title: string; endsAt: string; status: string } | null;
+  market: { activeCampaigns: number; demandMultiplier: number; season: string; seasonMultiplier: number };
+};
 
 export default function VendorOverview() {
-  const { store, refresh } = useAuth();
-  const [stats, setStats] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const gate = useVendorGate();
+  const { data, loading } = useApi<Overview>(gate.ready ? "/api/vendor/overview" : null, { poll: 8000 });
 
-  useEffect(() => {
-    if (!store) return;
-    (async () => {
-      setLoading(true);
-      const [p, o, t, f, v] = await Promise.all([
-        fetch(`/api/products?storeId=${store.id}`, { cache: "no-store" }).then((r) => r.json()),
-        fetch(`/api/orders?storeId=${store.id}`, { cache: "no-store" }).then((r) => r.json()),
-        fetch(`/api/threads?storeId=${store.id}`, { cache: "no-store" }).then((r) => r.json()),
-        fetch(`/api/facilities?storeId=${store.id}`, { cache: "no-store" }).then((r) => r.json()),
-        fetch(`/api/promos?storeId=${store.id}`, { cache: "no-store" }).then((r) => r.json()),
-      ]);
-      setStats({ products: p.products ?? [], orders: o.orders ?? [], threads: t.threads ?? [], facilities: f.facilities ?? [], promos: v.promos ?? [] });
-      setLoading(false);
-    })();
-  }, [store?.id]);
+  if (!gate.ready || (loading && !data)) {
+    return <div className="space-y-5"><Skeleton className="h-32" /><div className="grid grid-cols-2 gap-4 xl:grid-cols-4"><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /></div><Skeleton className="h-64" /></div>;
+  }
+  if (!data) return <Glass><EmptyState title="Couldn't load your dashboard" body="Check your connection and refresh." /></Glass>;
 
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!store) return <div className="rounded-3xl border bg-white p-8 text-center text-sm text-gray-500">Loading your store…</div>;
-
-  const products = stats?.products ?? [];
-  const orders = stats?.orders ?? [];
-  const available = products.filter((p: any) => p.status !== "oos").length;
-  const oos = products.filter((p: any) => p.status === "oos").length;
-  const low = products.filter((p: any) => p.status !== "oos" && p.stockQty < 15);
-  const pending = orders.filter((o: any) => ["pending", "accepted", "preparing"].includes(o.status));
-  const revenue = orders.filter((o: any) => o.status !== "cancelled").reduce((s: number, o: any) => s + Number(o.total), 0);
-
-  const cards = [
-    ["📦 Live items", String(products.length), `${available} available · ${oos} OOS`, "/vendor/inventory", "bg-green-700"],
-    ["🧾 Active orders", String(pending.length), `${orders.length} total · ${inr(revenue)} revenue`, "/vendor/orders", "bg-neutral-900"],
-    ["💬 Open chats", String((stats?.threads ?? []).filter((t: any) => t.status === "open").length), "bargain + delivery threads", "/vendor/chats", "bg-blue-700"],
-    ["✨ Facilities / Ads", `${(stats?.facilities ?? []).length} / ${(stats?.promos ?? []).length}`, "extras + video promos", "/vendor/facilities", "bg-purple-700"],
+  const { stats, inventory } = data;
+  const tiles = [
+    { label: "New bookings", value: String(stats.newBookings), href: "/vendor/bookings", icon: Receipt, tone: "text-amber-700" },
+    { label: "Today's sales", value: money(stats.todaySales), href: "/vendor/bookings", icon: Sparkles, tone: "text-emerald-700" },
+    { label: "Today's bookings", value: String(stats.todayOrders), href: "/vendor/bookings", icon: Clock, tone: "text-sky-700" },
+    { label: "Unread chats", value: String(stats.unreadChats), href: "/vendor/chats", icon: MessageCircle, tone: "text-violet-700" },
   ];
+  const hour = Number(new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }).format(new Date()));
+  const greet = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <div className="space-y-5">
-      <div className="overflow-hidden rounded-3xl bg-neutral-950 p-6 text-white sm:p-7">
-        <div className="flex flex-wrap items-center gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[13px] font-bold text-ink/55">{greet}</p>
+          <h1 className="text-[28px] font-black tracking-tight">{data.store.shopName}</h1>
+        </div>
+        <VisitStoreButton storeId={data.store.id} label="Visit my store" />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+        <StatusToggle store={data.store} big />
+        <Glass className="flex flex-col justify-between gap-4 p-5">
           <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-lime-300">{store.isOpen ? "● Live now" : "○ Currently closed"} · {store.city}</p>
-            <h1 className="mt-1 text-[24px] font-black sm:text-[28px]">Namaste, {store.shopName} 👋</h1>
-            <p className="mt-1 text-[13px] text-white/65">{store.isOpen ? store.nextClosingAt : store.nextOpeningAt} · 🛵 {store.deliveryAvailable ? "Delivery on" : "Delivery off"} · 🏃 {store.pickupAvailable ? "Pickup on" : "Pickup off"}</p>
+            <p className="text-[12px] font-bold uppercase tracking-[0.1em] text-ink/50">Market today</p>
+            <p className="mt-1 text-[17px] font-black">{data.market.season}</p>
+            <p className="text-[12.5px] text-ink/60">Demand ×{data.market.demandMultiplier.toFixed(2)} · {data.market.activeCampaigns} ads running across NCR</p>
           </div>
-          <div className="ml-auto flex gap-2">
-            <Link href="/vendor/inventory" className="rounded-2xl bg-lime-400 px-4 py-2.5 text-[13px] font-black text-neutral-950 hover:bg-lime-300">+ Add item</Link>
-            <Link href={`/stores/${store.id}`} className="rounded-2xl bg-white/10 px-4 py-2.5 text-[13px] font-black hover:bg-white/20">View storefront</Link>
-          </div>
-        </div>
+          {data.ad ? (
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-emerald-50/80 p-3">
+              <div className="min-w-0"><p className="truncate text-[13.5px] font-bold">{data.ad.title}</p><p className="text-[12px] text-ink/60">Live until {formatDateTimeIst(data.ad.endsAt)}</p></div>
+              <Badge tone="green">Live</Badge>
+            </div>
+          ) : (
+            <Link href="/vendor/ads"><Button variant="gold" size="sm"><Megaphone className="h-3.5 w-3.5" /> Promote your shop</Button></Link>
+          )}
+        </Glass>
       </div>
 
-      {loading ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-28" />)}</div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {cards.map(([label, n, sub, href, bg]) => (
-            <Link key={label as string} href={href as string} className="rounded-3xl border border-gray-200 bg-white p-5 transition hover:-translate-y-0.5 hover:shadow-lg">
-              <p className="text-[12px] font-black uppercase tracking-wide text-gray-500">{label}</p>
-              <p className="mt-1 text-[30px] font-black">{n}</p>
-              <p className="text-[12px] font-bold text-gray-500">{sub}</p>
-              <span className={`mt-3 inline-block rounded-xl ${bg} px-3 py-1.5 text-[12px] font-black text-white`}>Open →</span>
-            </Link>
-          ))}
-        </div>
-      )}
-
-      {!loading && low.length > 0 && (
-        <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
-          <p className="text-[14px] font-black text-amber-900">⚠️ Low stock — update before it goes OOS</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {low.slice(0, 6).map((p: any) => (
-              <Link key={p.id} href="/vendor/inventory" className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-amber-900 ring-1 ring-amber-200">{p.name} · {p.stockQty} left</Link>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-3xl border border-gray-200 bg-white p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-[14px] font-black">🧾 Latest orders</p>
-            <Link href="/vendor/orders" className="text-[12px] font-bold text-green-700">View all →</Link>
-          </div>
-          <div className="mt-3 space-y-2">
-            {(orders.slice(0, 4) as any[]).map((o: any) => (
-              <div key={o.id} className="flex items-center gap-3 rounded-2xl bg-gray-50 px-3 py-2.5">
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-white text-lg">🧺</span>
-                <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-bold">{o.product?.name ?? o.facility?.title ?? "Order"} × {o.qty}</span>
-                  <span className="block text-[11px] text-gray-500">{o.customerName} · {o.fulfillment} · {timeAgo(o.createdAt)}</span>
-                </span>
-                <span className="ml-auto rounded-full bg-neutral-900 px-2.5 py-1 text-[11px] font-black text-white">{o.status}</span>
-              </div>
-            ))}
-            {orders.length === 0 && <p className="py-6 text-center text-[13px] text-gray-400">No orders yet — share your store link on WhatsApp 📲</p>}
-          </div>
-        </div>
-        <div className="rounded-3xl border border-gray-200 bg-white p-5">
-          <div className="flex items-center justify-between">
-            <p className="text-[14px] font-black">💬 Latest chats</p>
-            <Link href="/vendor/chats" className="text-[12px] font-bold text-green-700">Reply →</Link>
-          </div>
-          <div className="mt-3 space-y-2">
-            {((stats?.threads ?? []).slice(0, 4) as any[]).map((t: any) => (
-              <div key={t.id} className="flex items-center gap-3 rounded-2xl bg-gray-50 px-3 py-2.5">
-                <span className="grid h-9 w-9 place-items-center rounded-xl bg-green-100 text-lg">💬</span>
-                <span className="min-w-0">
-                  <span className="block truncate text-[13px] font-bold">{t.customer?.name} · {t.product?.name ?? t.type}</span>
-                  <span className="block truncate text-[11px] text-gray-500">{t.preview}</span>
-                </span>
-                {t.offerPrice && <span className="ml-auto rounded-full bg-green-100 px-2.5 py-1 text-[11px] font-black text-green-800">{inr(t.offerPrice)}</span>}
-              </div>
-            ))}
-            {(stats?.threads ?? []).length === 0 && <p className="py-6 text-center text-[13px] text-gray-400">No chats yet — customers bargain under each item.</p>}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        {[
-          ["📸 Update DP & timings", "Open/close, next slot, WhatsApp number", "/vendor/settings"],
-          ["✨ Add a facility", "Atta grinding, delivery, subscription…", "/vendor/facilities"],
-          ["▶ Boost with video", "60-sec ad charged per season", "/vendor/promos"],
-        ].map(([t, d, h]) => (
-          <Link key={t as string} href={h as string} className="rounded-3xl border border-dashed border-gray-300 bg-white p-5 hover:border-green-600 hover:bg-green-50/50">
-            <p className="text-[14px] font-black">{t}</p>
-            <p className="mt-1 text-[12.5px] text-gray-500">{d}</p>
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        {tiles.map((t) => (
+          <Link key={t.label} href={t.href}>
+            <Glass className="rise h-full p-5 transition hover:-translate-y-0.5">
+              <div className="flex items-center justify-between"><t.icon className={`h-5 w-5 ${t.tone}`} /><ArrowRight className="h-4 w-4 text-ink/30" /></div>
+              <p className="mt-4 text-[26px] font-black tabular-nums tracking-tight">{t.value}</p>
+              <p className="text-[12.5px] font-semibold text-ink/55">{t.label}</p>
+            </Glass>
           </Link>
         ))}
       </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_1.3fr]">
+        <Glass className="p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <p className="flex items-center gap-2 text-[15px] font-extrabold"><Boxes className="h-4 w-4" /> Inventory</p>
+            <Link href="/vendor/inventory" className="text-[12.5px] font-bold text-ink/60 hover:text-ink">Manage</Link>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <Stat label="Listed" value={inventory.total} />
+            <Stat label="In stock" value={inventory.inStock} tone="text-emerald-700" />
+            <Stat label="Out" value={inventory.outOfStock} tone="text-red-700" />
+          </div>
+          {inventory.low > 0 && <p className="mt-4 rounded-2xl bg-amber-50/90 px-3 py-2 text-[12.5px] font-semibold text-amber-900">{inventory.low} items are running low.</p>}
+        </Glass>
+
+        <Glass className="p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <p className="text-[15px] font-extrabold">Latest bookings</p>
+            <Link href="/vendor/bookings" className="text-[12.5px] font-bold text-ink/60 hover:text-ink">All bookings</Link>
+          </div>
+          {data.recentOrders.length === 0 ? (
+            <EmptyState title="No bookings yet" body="Bookings appear here the moment a customer places one." />
+          ) : (
+            <ul className="divide-y divide-ink/5">
+              {data.recentOrders.slice(0, 6).map((o) => (
+                <li key={o.id} className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] font-bold">{o.customerName}</p>
+                    <p className="text-[12px] text-ink/50">{o.fulfillment === "delivery" ? "Delivery" : "Pickup"} · {formatDateTimeIst(o.createdAt)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[14px] font-black tabular-nums">{money(o.total)}</p>
+                    <p className="text-[11.5px] font-bold text-ink/60">{STATUS_LABEL[o.status] ?? o.status}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Glass>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, tone = "" }: { label: string; value: number; tone?: string }) {
+  return (
+    <div className="rounded-2xl bg-white/50 p-3">
+      <p className={`text-[22px] font-black tabular-nums ${tone}`}>{value}</p>
+      <p className="text-[11.5px] font-semibold text-ink/55">{label}</p>
     </div>
   );
 }

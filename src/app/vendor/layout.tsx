@@ -2,130 +2,80 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import Header from "@/components/Header";
+import { useEffect } from "react";
+import { LayoutDashboard, Boxes, Clock, Receipt, MessageCircle, Wrench, Megaphone, Settings, LogOut, Store } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
+import { Logo } from "@/components/ShopHeader";
+import { EmptyState, Glass, Skeleton, StatusPill, Button } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  ["Overview", "/vendor", "📊"],
-  ["Live Inventory", "/vendor/inventory", "📦"],
-  ["Facilities", "/vendor/facilities", "✨"],
-  ["Video Ads", "/vendor/promos", "▶"],
-  ["Orders", "/vendor/orders", "🧾"],
-  ["Chats", "/vendor/chats", "💬"],
-  ["Store Settings", "/vendor/settings", "⚙️"],
+  { href: "/vendor", label: "Overview", icon: LayoutDashboard },
+  { href: "/vendor/inventory", label: "Inventory", icon: Boxes },
+  { href: "/vendor/hours", label: "Open / close", icon: Clock },
+  { href: "/vendor/bookings", label: "Bookings", icon: Receipt },
+  { href: "/vendor/chats", label: "Chats", icon: MessageCircle },
+  { href: "/vendor/services", label: "Services", icon: Wrench },
+  { href: "/vendor/ads", label: "Ads", icon: Megaphone },
+  { href: "/vendor/settings", label: "Shop settings", icon: Settings },
 ];
 
 export default function VendorLayout({ children }: { children: React.ReactNode }) {
-  const { user, store, loading, refresh } = useAuth();
-  const pathname = usePathname();
+  const { user, store, loading, logout } = useAuth();
   const router = useRouter();
-  const [toggling, setToggling] = useState(false);
-  const [mobileNav, setMobileNav] = useState(false);
+  const path = usePathname();
 
   useEffect(() => {
-    if (!loading && !user) router.push("/auth?next=/vendor");
-    else if (!loading && user && user.role !== "vendor") router.push("/account");
+    if (loading) return;
+    if (!user) router.replace("/auth?next=/vendor");
+    else if (user.role !== "vendor") router.replace("/");
   }, [loading, user, router]);
 
-  const toggleOpen = async () => {
-    if (!store) return;
-    setToggling(true);
-    await fetch(`/api/stores/${store.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isOpen: !store.isOpen }),
-    });
-    await refresh();
-    setToggling(false);
-  };
+  if (loading || !user || user.role !== "vendor") {
+    return <div className="grid min-h-[70vh] gap-4 lg:grid-cols-[260px_1fr]"><Skeleton className="hidden h-[70vh] lg:block" /><Skeleton className="h-[70vh]" /></div>;
+  }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen">
-        <Header />
-        <div className="mx-auto max-w-7xl px-4 py-10">
-          <div className="h-40 animate-pulse rounded-3xl bg-gray-200" />
-        </div>
-      </div>
-    );
+  if (!store) {
+    return <Glass><EmptyState title="We couldn't find your shop" body="Please log out and log back in. If it still happens, contact support." action={<Button variant="soft" onClick={logout}>Log out</Button>} /></Glass>;
   }
-  if (!user || user.role !== "vendor") {
-    return (
-      <div className="min-h-screen">
-        <Header />
-        <div className="mx-auto max-w-md px-4 py-16 text-center">
-          <p className="text-4xl">🏪</p>
-          <h1 className="mt-3 text-[22px] font-black">Vendor area</h1>
-          <p className="mt-1 text-[14px] text-gray-500">Login as a vendor to manage live inventory, orders & chats.</p>
-          <Link href="/auth?role=vendor" className="mt-4 inline-block rounded-2xl bg-neutral-900 px-5 py-3 text-[14px] font-bold text-white">Vendor login →</Link>
-        </div>
-      </div>
-    );
-  }
+
+  const isActive = (href: string) => (href === "/vendor" ? path === "/vendor" : path.startsWith(href));
 
   return (
-    <div className="min-h-screen">
-      <Header />
-      <div className="mx-auto flex max-w-7xl gap-5 px-4 py-6">
-        {/* sidebar desktop */}
-        <aside className="sticky top-[140px] hidden h-fit w-64 shrink-0 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm lg:block">
-          <div className="border-b border-gray-100 bg-gradient-to-br from-green-900 to-green-700 p-5 text-white">
-            <div className="flex items-center gap-3">
-              <img src={store?.dpUrl || "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=200&q=80"} className="h-12 w-12 rounded-2xl border-2 border-white/40 object-cover" alt="" />
-              <div className="min-w-0">
-                <p className="truncate text-[14px] font-black">{store?.shopName ?? "My Store"}</p>
-                <p className="text-[11px] text-white/70">{user.name} · vendor</p>
-              </div>
+    <div className="grid gap-6 lg:grid-cols-[264px_1fr] lg:gap-8">
+      <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+        <Glass className="hidden !rounded-[28px] p-4 lg:block">
+          <div className="mb-4 px-2"><Logo /></div>
+          <div className="mb-4 flex items-center gap-3 rounded-2xl bg-white/60 p-3">
+            <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-white">
+              {store.dpUrl ? <img src={store.dpUrl} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center"><Store className="h-5 w-5 text-ink/50" /></div>}
             </div>
-            <button onClick={toggleOpen} disabled={toggling} className={`mt-3 flex w-full items-center justify-between rounded-2xl px-3.5 py-2.5 text-[13px] font-black ${store?.isOpen ? "bg-green-400 text-green-950" : "bg-white/15 text-white"}`}>
-              <span>{store?.isOpen ? "● OPEN NOW" : "○ CLOSED"}</span>
-              <span className="rounded-lg bg-black/20 px-2 py-1 text-[11px]">{toggling ? "…" : "Toggle"}</span>
-            </button>
-            <p className="mt-1.5 text-[11px] text-white/70">{store?.isOpen ? store?.nextClosingAt : store?.nextOpeningAt}</p>
+            <div className="min-w-0">
+              <p className="truncate text-[14px] font-extrabold">{store.shopName}</p>
+              <StatusPill compact isOpen={store.isOpen} nextOpeningAt={store.nextOpeningAt} nextClosingAt={store.nextClosingAt} />
+            </div>
           </div>
-          <nav className="p-2.5">
-            {NAV.map(([label, href, icon]) => {
-              const active = href === "/vendor" ? pathname === "/vendor" : pathname.startsWith(href);
-              return (
-                <Link key={href} href={href} className={cn("flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[13.5px] font-bold transition", active ? "bg-neutral-900 text-white" : "text-gray-600 hover:bg-gray-100")}>
-                  <span>{icon}</span> {label}
-                  {label === "Chats" && <span className="ml-auto rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-black text-green-800">live</span>}
-                </Link>
-              );
-            })}
+          <nav className="space-y-1">
+            {NAV.map((n) => (
+              <Link key={n.href} href={n.href} className={cn("flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[13.5px] font-bold transition", isActive(n.href) ? "bg-ink text-white shadow-lg" : "text-ink/70 hover:bg-white/70 hover:text-ink")}>
+                <n.icon className="h-4 w-4" /> {n.label}
+              </Link>
+            ))}
           </nav>
-          <div className="border-t border-gray-100 p-3">
-            {store && <Link href={`/stores/${store.id}`} className="block rounded-2xl bg-green-50 px-3.5 py-2.5 text-center text-[13px] font-black text-green-800 hover:bg-green-100">👁 View public store →</Link>}
-          </div>
-        </aside>
+          <button onClick={logout} className="mt-4 flex w-full items-center gap-3 rounded-2xl px-3.5 py-2.5 text-[13.5px] font-bold text-ink/60 hover:bg-white/70">
+            <LogOut className="h-4 w-4" /> Log out
+          </button>
+        </Glass>
 
-        {/* main */}
-        <div className="min-w-0 flex-1">
-          {/* mobile nav */}
-          <div className="mb-4 lg:hidden">
-            <button onClick={() => setMobileNav(!mobileNav)} className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-left text-[13.5px] font-black">
-              {mobileNav ? "✕ Close menu" : "☰ Vendor menu — " + (NAV.find(([, h]) => (h === "/vendor" ? pathname === h : pathname.startsWith(h)))?.[0] ?? "Overview")}
-            </button>
-            {mobileNav && (
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {NAV.map(([label, href, icon]) => (
-                  <Link key={href} href={href} onClick={() => setMobileNav(false)} className={cn("rounded-2xl border px-3 py-2.5 text-[13px] font-bold", (href === "/vendor" ? pathname === href : pathname.startsWith(href)) ? "border-neutral-900 bg-neutral-900 text-white" : "border-gray-200 bg-white")}>
-                    {icon} {label}
-                  </Link>
-                ))}
-              </div>
-            )}
-            {store && (
-              <button onClick={toggleOpen} className={`mt-2 w-full rounded-2xl px-4 py-3 text-[13.5px] font-black text-white ${store.isOpen ? "bg-green-700" : "bg-neutral-900"}`}>
-                {store.isOpen ? "● OPEN — tap to close" : "○ CLOSED — tap to open"}
-              </button>
-            )}
-          </div>
-          {children}
+        <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 lg:hidden">
+          {NAV.map((n) => (
+            <Link key={n.href} href={n.href} className={cn("flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[12.5px] font-bold transition", isActive(n.href) ? "bg-ink text-white" : "glass-pill text-ink/70")}>
+              <n.icon className="h-3.5 w-3.5" /> {n.label}
+            </Link>
+          ))}
         </div>
-      </div>
+      </aside>
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

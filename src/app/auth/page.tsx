@@ -1,198 +1,184 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import Header from "@/components/Header";
-import { inputCls, btnPrimary, Field } from "@/components/ui";
+import Link from "next/link";
+import { Store, ShoppingBag, Loader2, Mail, Lock, User, Phone, MapPin } from "lucide-react";
+import { api, ApiError } from "@/hooks/useApi";
 import { useAuth } from "@/components/AuthProvider";
+import { useToast } from "@/components/Toast";
+import { Button, Field, Glass } from "@/components/ui";
+import { Logo } from "@/components/ShopHeader";
+import { CITIES } from "@/lib/ncr";
+import { cn } from "@/lib/utils";
+
+const DEMO = {
+  vendor: { email: "vendor1@zepkart.demo", password: "vendor123", label: "Vendor" },
+  customer: { email: "customer@zepkart.demo", password: "customer123", label: "Customer" },
+} as const;
+
+const DEFAULT_PIN: Record<string, string> = { Delhi: "110001", Noida: "201301", Gurugram: "122002" };
 
 function AuthInner() {
-  const params = useSearchParams();
   const router = useRouter();
+  const params = useSearchParams();
   const { refresh } = useAuth();
-  const [mode, setMode] = useState(params.get("mode") === "signup" ? "signup" : "login");
-  const [role, setRole] = useState(params.get("role") === "vendor" ? "vendor" : "customer");
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [demoBusy, setDemoBusy] = useState<"vendor" | "customer" | null>(null);
+  const { toast } = useToast();
+  const next = params.get("next");
+  const [mode, setMode] = useState<"login" | "signup">(params.get("mode") === "signup" ? "signup" : "login");
+  const [role, setRole] = useState<"customer" | "vendor">(params.get("role") === "vendor" ? "vendor" : "customer");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", shopName: "", city: "Delhi" as (typeof CITIES)[number] });
+  const [err, setErr] = useState<string | null>(null);
 
-  const DEMO_ACCOUNTS = {
-    vendor: { email: "vendor1@zapkart.demo", password: "vendor123" },
-    customer: { email: "customer@zapkart.demo", password: "customer123" },
-  } as const;
-
-  const postAuth = async (path: string, body: Record<string, unknown>) => {
-    const r = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const j = await r.json().catch(() => ({}));
-    return { ok: r.ok, status: r.status, data: j };
+  const finish = async (role: string) => {
+    await refresh();
+    const dest = next && next.startsWith("/") && !next.startsWith("//") ? next : role === "vendor" ? "/vendor" : "/";
+    router.replace(dest);
+    router.refresh();
   };
 
-  const finishLogin = async (role: string) => {
-    await refresh();
-    const next = params.get("next");
-    if (next) router.push(next);
-    else router.push(role === "vendor" ? "/vendor" : "/");
+  const login = async (email: string, password: string) => {
+    try {
+      return await api<{ user: { role: string } }>("/api/auth/login", { json: { email, password } });
+    } catch (e) {
+      // The demo accounts may not exist yet on a fresh database. Seed once, then retry.
+      if (e instanceof ApiError && (e.status === 401 || e.status === 404)) {
+        await api("/api/seed", { method: "POST" });
+        return await api<{ user: { role: string } }>("/api/auth/login", { json: { email, password } });
+      }
+      throw e;
+    }
+  };
+
+  const demoLogin = async (kind: keyof typeof DEMO) => {
+    setBusy(kind);
+    setErr(null);
+    try {
+      const r = await login(DEMO[kind].email, DEMO[kind].password);
+      await finish(r.user.role);
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(null);
+    }
   };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErr("");
-    setBusy(true);
+    setBusy("form");
+    setErr(null);
     try {
-      const res = await postAuth(`/api/auth/${mode}`, { name, email, password, phone, role });
-      if (!res.ok) {
-        setErr(res.data.error || "Something went wrong");
-        return;
+      if (mode === "login") {
+        const r = await api<{ user: { role: string } }>("/api/auth/login", { json: { email: form.email, password: form.password } });
+        await finish(r.user.role);
+      } else {
+        const body: Record<string, unknown> = { name: form.name, email: form.email, password: form.password, phone: form.phone, role };
+        if (role === "vendor") {
+          body.shopName = form.shopName;
+          body.city = form.city;
+        }
+        const r = await api<{ user: { role: string } }>("/api/auth/signup", { json: body });
+        toast("Welcome to ZepKart");
+        await finish(r.user.role);
       }
-      await finishLogin(res.data.user.role);
-    } finally {
-      setBusy(false);
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(null);
     }
   };
 
-  // One-click demo login: signs in straight away, no extra "Login" press needed.
-  const loginDemo = async (kind: "vendor" | "customer") => {
-    const acct = DEMO_ACCOUNTS[kind];
-    setErr("");
-    setMode("login");
-    setEmail(acct.email);
-    setPassword(acct.password);
-    setDemoBusy(kind);
-    try {
-      const attempt = () => postAuth("/api/auth/login", { email: acct.email, password: acct.password });
-      let res = await attempt();
-      if (res.status === 404) {
-        // Demo accounts don't exist on this database yet: seed them, then retry once.
-        await fetch("/api/seed", { method: "POST" });
-        res = await attempt();
-      }
-      if (!res.ok) {
-        setErr(res.data.error || "Demo login failed. Please try again.");
-        return;
-      }
-      await finishLogin(res.data.user.role);
-    } catch {
-      setErr("Couldn't reach the server. Please try again.");
-    } finally {
-      setDemoBusy(null);
-    }
-  };
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value });
 
   return (
-    <div className="min-h-screen">
-      <Header />
-      <div className="mx-auto grid max-w-5xl gap-6 px-4 py-10 lg:grid-cols-[1fr_380px]">
-        <div className="overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-xl">
-          <div className="flex border-b border-gray-100">
-            {(["login", "signup"] as const).map((m) => (
-              <button key={m} onClick={() => setMode(m)} className={`flex-1 py-4 text-[14px] font-black capitalize ${mode === m ? "bg-neutral-900 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}>
-                {m === "login" ? "Welcome back" : "Join ZapKart"}
-              </button>
-            ))}
-          </div>
-          <form onSubmit={submit} className="space-y-4 p-6 sm:p-8">
-            {mode === "signup" && (
-              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-gray-100 p-1.5">
-                {(["customer", "vendor"] as const).map((r) => (
-                  <button type="button" key={r} onClick={() => setRole(r)} className={`rounded-xl py-2.5 text-[13.5px] font-black capitalize ${role === r ? "bg-white shadow" : "text-gray-500"}`}>
-                    {r === "customer" ? "🛒 Customer" : "🏪 Vendor"}
-                  </button>
-                ))}
-              </div>
-            )}
-            {mode === "signup" && (
-              <Field label="Full name">
-                <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. Ramesh Gupta" className={inputCls} />
-              </Field>
-            )}
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Email">
-                <input value={email} onChange={(e) => setEmail(e.target.value)} required type="email" placeholder="you@shop.com" className={inputCls} />
-              </Field>
-              <Field label={mode === "signup" ? "Phone / WhatsApp" : "Password (phone optional on signup)"}>
-                {mode === "signup" ? (
-                  <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="98765 43210" className={inputCls} />
-                ) : (
-                  <input value={password} onChange={(e) => setPassword(e.target.value)} required type="password" placeholder="••••••••" className={inputCls} />
-                )}
-              </Field>
-            </div>
-            {mode === "signup" && (
-              <Field label="Password">
-                <input value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} type="password" placeholder="Min 6 characters" className={inputCls} />
-              </Field>
-            )}
-            {mode === "login" && (
-              <Field label="Phone (optional)">
-                <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="For faster delivery contact" className={inputCls} />
-              </Field>
-            )}
-            {err && <p className="rounded-xl bg-red-50 px-4 py-3 text-[13px] font-bold text-red-700">{err}</p>}
-            <button disabled={busy} className={`${btnPrimary} w-full !py-3.5 !text-[15px]`}>
-              {busy ? "Please wait…" : mode === "login" ? "Login →" : role === "vendor" ? "Create vendor account + store 🏪" : "Create customer account 🛒"}
-            </button>
-            <p className="text-center text-[12.5px] text-gray-500">
-              {mode === "login" ? "New here? " : "Already have an account? "}
-              <button type="button" onClick={() => setMode(mode === "login" ? "signup" : "login")} className="font-bold text-green-700 underline">
-                {mode === "login" ? "Sign up" : "Login"}
-              </button>
-            </p>
-          </form>
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-[28px] bg-neutral-950 p-6 text-white">
-            <p className="text-[11px] font-black uppercase tracking-[0.2em] text-lime-300">Try instantly — no signup needed</p>
-            <h3 className="mt-2 text-[20px] font-black">One-click demo logins</h3>
-            <div className="mt-4 space-y-2.5">
-              <button
-                type="button"
-                onClick={() => loginDemo("vendor")}
-                disabled={demoBusy !== null}
-                className="w-full rounded-2xl bg-purple-600 px-4 py-3 text-left transition hover:bg-purple-500 disabled:cursor-wait disabled:opacity-70"
-              >
-                <span className="block text-[14px] font-black">{demoBusy === "vendor" ? "⏳ Signing in…" : "🏪 Login as Vendor"}</span>
-                <span className="block font-mono text-[12px] text-white/70">vendor1@zapkart.demo / vendor123</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => loginDemo("customer")}
-                disabled={demoBusy !== null}
-                className="w-full rounded-2xl bg-green-700 px-4 py-3 text-left transition hover:bg-green-600 disabled:cursor-wait disabled:opacity-70"
-              >
-                <span className="block text-[14px] font-black">{demoBusy === "customer" ? "⏳ Signing in…" : "🛒 Login as Customer"}</span>
-                <span className="block font-mono text-[12px] text-white/70">customer@zapkart.demo / customer123</span>
-              </button>
-            </div>
-            <p className="mt-3 text-[12px] text-white/60">One click signs you straight in. Vendors land on the live dashboard.</p>
-          </div>
-          <div className="rounded-[28px] border border-green-200 bg-green-50 p-6">
-            <p className="text-[14px] font-black text-green-900">What you get 👇</p>
-            <ul className="mt-2 space-y-1.5 text-[13px] text-green-900/80">
-              <li>✓ Vendors: live inventory, OOS toggle, open/close + timings</li>
-              <li>✓ Facilities with price + 60-sec video ads per season</li>
-              <li>✓ Customers: bargain chat, pickup/delivery, WhatsApp order</li>
-            </ul>
-            <Link href="/" className="mt-3 inline-block text-[13px] font-bold text-green-800 underline">← Back to bazaar</Link>
-          </div>
+    <div className="grid min-h-[80vh] items-center gap-8 lg:grid-cols-[1fr_440px] lg:gap-14">
+      <div className="space-y-6 text-center lg:text-left">
+        <Logo />
+        <h1 className="text-[40px] font-black leading-[1.02] tracking-[-0.03em] sm:text-[56px]">Quick commerce for <span className="bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Delhi NCR.</span></h1>
+        <p className="mx-auto max-w-md text-[16px] text-ink/65 lg:mx-0">Delhi, Noida and Gurugram stores, one app.</p>
+        <div className="flex flex-wrap justify-center gap-2 lg:justify-start">
+          {CITIES.map((c) => (
+            <span key={c} className="glass-pill inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-bold"><MapPin className="h-3.5 w-3.5" /> {c}</span>
+          ))}
         </div>
       </div>
+
+      <Glass strong className="rise space-y-6 !rounded-[32px] p-6 sm:p-8">
+        <div className="space-y-3">
+          <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-ink/50">Try a demo account</p>
+          <div className="grid grid-cols-2 gap-3">
+            <button disabled={!!busy} onClick={() => demoLogin("vendor")} className="btn-dark flex h-14 items-center justify-center gap-2 rounded-2xl text-[14.5px] font-bold disabled:opacity-60">
+              {busy === "vendor" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Store className="h-4 w-4" />} Login as Vendor
+            </button>
+            <button disabled={!!busy} onClick={() => demoLogin("customer")} className="btn-gold flex h-14 items-center justify-center gap-2 rounded-2xl text-[14.5px] font-bold disabled:opacity-60">
+              {busy === "customer" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShoppingBag className="h-4 w-4" />} Login as Customer
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 text-[12px] font-semibold text-ink/40">
+          <span className="h-px flex-1 bg-ink/10" /> or <span className="h-px flex-1 bg-ink/10" />
+        </div>
+
+        <div className="glass-pill grid grid-cols-2 rounded-full p-1 text-[13px] font-bold">
+          {(["login", "signup"] as const).map((m) => (
+            <button key={m} onClick={() => setMode(m)} className={cn("rounded-full py-2 transition", mode === m ? "bg-white text-ink shadow" : "text-ink/60")}>
+              {m === "login" ? "Log in" : "Create account"}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={submit} className="space-y-4">
+          {mode === "signup" && (
+            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-white/40 p-1 text-[13px] font-bold">
+              {(["customer", "vendor"] as const).map((r) => (
+                <button type="button" key={r} onClick={() => setRole(r)} className={cn("rounded-xl py-2 capitalize transition", role === r ? "bg-ink text-white" : "text-ink/65")}>{r === "customer" ? "Shopper" : "Shop owner"}</button>
+              ))}
+            </div>
+          )}
+          {mode === "signup" && (
+            <Field label="Full name">
+              <div className="relative"><User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" /><input className="field pl-10" required value={form.name} onChange={set("name")} autoComplete="name" /></div>
+            </Field>
+          )}
+          <Field label="Email">
+            <div className="relative"><Mail className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" /><input className="field pl-10" type="email" required value={form.email} onChange={set("email")} autoComplete="email" /></div>
+          </Field>
+          <Field label="Password" hint={mode === "signup" ? "At least 6 characters" : undefined}>
+            <div className="relative"><Lock className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" /><input className="field pl-10" type="password" required minLength={mode === "signup" ? 6 : 1} value={form.password} onChange={set("password")} autoComplete={mode === "signup" ? "new-password" : "current-password"} /></div>
+          </Field>
+          {mode === "signup" && (
+            <>
+              <Field label="Mobile number">
+                <div className="relative"><Phone className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" /><input className="field pl-10" inputMode="tel" required={role === "vendor"} value={form.phone} onChange={set("phone")} placeholder="10-digit Indian mobile" /></div>
+              </Field>
+              {role === "vendor" && (
+                <>
+                  <Field label="Shop name"><input className="field" required value={form.shopName} onChange={set("shopName")} /></Field>
+                  <Field label="City">
+                    <select className="field" value={form.city} onChange={set("city")}>
+                      {CITIES.map((c) => <option key={c} value={c}>{c} ({DEFAULT_PIN[c]})</option>)}
+                    </select>
+                  </Field>
+                </>
+              )}
+            </>
+          )}
+          {err && <p role="alert" className="rounded-2xl bg-red-50/90 px-4 py-2.5 text-[13px] font-semibold text-red-800">{err}</p>}
+          <Button type="submit" block size="lg" loading={busy === "form"} disabled={!!busy}>
+            {mode === "login" ? "Log in" : "Create account"}
+          </Button>
+        </form>
+        <p className="text-center text-[12.5px] text-ink/55">
+          <Link href="/" className="font-bold text-ink hover:underline">Continue browsing</Link>
+        </p>
+      </Glass>
     </div>
   );
 }
 
 export default function AuthPage() {
   return (
-    <Suspense fallback={<div className="p-10 text-center">Loading…</div>}>
+    <Suspense fallback={<div className="grid min-h-[60vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}>
       <AuthInner />
     </Suspense>
   );

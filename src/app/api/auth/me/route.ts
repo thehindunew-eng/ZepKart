@@ -1,28 +1,20 @@
-import { NextResponse } from "next/server";
-import { getSessionUserFull } from "@/lib/auth";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { stores } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { currentUser } from "@/lib/auth";
+import { ok, route, safeUser } from "@/lib/api";
+import { refreshStore } from "@/lib/store-status";
+import { vendorStore } from "@/lib/dto";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const user = await getSessionUserFull();
-  if (!user) return NextResponse.json({ user: null });
+export const GET = route(async () => {
+  const user = await currentUser();
+  if (!user) return ok({ user: null, store: null });
   let store = null;
   if (user.role === "vendor") {
-    const s = await db.select().from(stores).where(eq(stores.ownerId, user.id)).limit(1);
-    store = s[0] ?? null;
+    const rows = await db.select().from(stores).where(eq(stores.ownerId, user.id)).limit(1);
+    if (rows[0]) store = vendorStore(await refreshStore(rows[0]));
   }
-  return NextResponse.json({
-    user: {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      phone: user.phone,
-      avatarUrl: user.avatarUrl,
-    },
-    store,
-  });
-}
+  return ok({ user: safeUser(user), store });
+});

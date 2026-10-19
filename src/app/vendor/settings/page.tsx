@@ -1,125 +1,161 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
-import { Field, inputCls, btnPrimary } from "@/components/ui";
-import { inr } from "@/lib/utils";
+import { useState } from "react";
+import { api } from "@/hooks/useApi";
+import { useAuth, type VendorStore } from "@/components/AuthProvider";
+import { useVendorGate } from "@/components/vendor/useVendorData";
+import { ImageUpload } from "@/components/ImageUpload";
+import { useToast } from "@/components/Toast";
+import { Button, Field, Glass, Skeleton, Switch } from "@/components/ui";
+import { CATEGORIES, CITIES } from "@/lib/ncr";
 
-export default function StoreSettings() {
-  const { store, refresh } = useAuth();
-  const [form, setForm] = useState<any>(null);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
+type Form = {
+  shopName: string;
+  description: string;
+  dpUrl: string | null;
+  coverUrl: string | null;
+  whatsapp: string;
+  phone: string;
+  address: string;
+  locality: string;
+  city: string;
+  pincode: string;
+  category: string;
+  pickupAvailable: boolean;
+  deliveryAvailable: boolean;
+  deliveryFee: string;
+  freeDeliveryAbove: string;
+  minOrder: string;
+  etaMinutes: string;
+  openingHours: string;
+};
 
-  useEffect(() => {
-    if (store) setForm({ ...store });
-  }, [store?.id]);
+const fromStore = (s: VendorStore & { phone?: string | null }): Form => ({
+  shopName: s.shopName,
+  description: s.description ?? "",
+  dpUrl: s.dpUrl,
+  coverUrl: s.coverUrl,
+  whatsapp: s.whatsapp ?? "",
+  phone: s.phone ?? "",
+  address: s.address ?? "",
+  locality: s.locality ?? "",
+  city: s.city,
+  pincode: s.pincode ?? "",
+  category: s.category,
+  pickupAvailable: s.pickupAvailable,
+  deliveryAvailable: s.deliveryAvailable,
+  deliveryFee: String(s.deliveryFee),
+  freeDeliveryAbove: String(s.freeDeliveryAbove),
+  minOrder: String(s.minOrder),
+  etaMinutes: String(s.etaMinutes),
+  openingHours: s.openingHours ?? "",
+});
 
-  if (!form) return <div className="rounded-3xl border bg-white p-8 text-center text-sm text-gray-500">Loading store…</div>;
+export default function SettingsPage() {
+  const gate = useVendorGate();
+  if (!gate.ready || !gate.store) return <Skeleton className="h-[600px]" />;
+  return <SettingsForm key={gate.store.id} store={gate.store as VendorStore & { phone?: string | null }} />;
+}
 
-  const set = (k: string, v: unknown) => setForm((f: any) => ({ ...f, [k]: v }));
+function SettingsForm({ store }: { store: VendorStore & { phone?: string | null } }) {
+  const { setStore } = useAuth();
+  const { toast } = useToast();
+  const [f, setF] = useState<Form>(() => fromStore(store));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
-  const fileToDataUrl = (f: File): Promise<string> =>
-    new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(String(r.result));
-      r.onerror = rej;
-      r.readAsDataURL(f);
-    });
+  const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((x) => ({ ...x, [k]: v }));
+  const amount = (v: string) => (v === "" ? 0 : Number(v));
 
   const save = async () => {
-    setSaving(true);
-    setMsg("");
-    const r = await fetch(`/api/stores/${store!.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    setSaving(false);
-    if (r.ok) {
-      setMsg("✅ Store updated — customers see it live.");
-      refresh();
-    } else setMsg("❌ Failed to save");
+    setBusy(true);
+    setErr(null);
+    try {
+      const body = {
+        shopName: f.shopName.trim(),
+        description: f.description.trim() || null,
+        dpUrl: f.dpUrl,
+        coverUrl: f.coverUrl,
+        whatsapp: f.whatsapp.trim(),
+        phone: f.phone.trim() || null,
+        address: f.address.trim(),
+        locality: f.locality.trim(),
+        city: f.city,
+        pincode: f.pincode.trim(),
+        category: f.category,
+        pickupAvailable: f.pickupAvailable,
+        deliveryAvailable: f.deliveryAvailable,
+        deliveryFee: amount(f.deliveryFee),
+        freeDeliveryAbove: amount(f.freeDeliveryAbove),
+        minOrder: amount(f.minOrder),
+        etaMinutes: Number(f.etaMinutes) || 30,
+        openingHours: f.openingHours.trim() || undefined,
+      };
+      const r = await api<{ store: VendorStore & { phone?: string | null } }>("/api/vendor/store", { method: "PATCH", json: body });
+      setStore(r.store);
+      setF(fromStore(r.store));
+      toast("Shop details saved");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-[22px] font-black">⚙️ Store settings</h1>
-        <p className="text-[13px] text-gray-500">DP + shop name, open/close with next timings, WhatsApp, pickup/delivery — all live.</p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-[28px] font-black tracking-tight">Shop settings</h1>
+          <p className="text-[14px] text-ink/55">What customers see about your shop.</p>
+        </div>
+        <Button loading={busy} onClick={save}>Save changes</Button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
-        {/* DP + open/close card */}
-        <div className="h-fit rounded-3xl border border-gray-200 bg-white p-5">
-          <p className="text-[13px] font-black uppercase tracking-wide text-gray-500">Shop display picture</p>
-          <img src={form.dpUrl || "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=400&q=70"} className="mt-3 aspect-square w-full rounded-3xl border border-gray-200 object-cover" alt="" />
-          <Field label="DP image URL">
-            <div className="mt-1"><input value={form.dpUrl ?? ""} onChange={(e) => set("dpUrl", e.target.value)} placeholder="https://…" className={inputCls} /></div>
+      <Glass className="space-y-6 p-5 sm:p-7">
+        <section className="grid gap-6 md:grid-cols-[220px_1fr]">
+          <ImageUpload value={f.dpUrl} onChange={(u) => set("dpUrl", u)} label="Shop DP" shape="round" />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="sm:col-span-2"><Field label="Shop name"><input className="field" value={f.shopName} maxLength={160} onChange={(e) => set("shopName", e.target.value)} /></Field></div>
+            <Field label="Category">
+              <select className="field" value={f.category} onChange={(e) => set("category", e.target.value)}>
+                {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label="Typical prep time (min)"><input className="field" inputMode="numeric" value={f.etaMinutes} onChange={(e) => set("etaMinutes", e.target.value)} /></Field>
+            <div className="sm:col-span-2"><Field label="About your shop"><textarea className="field min-h-[72px]" maxLength={1000} value={f.description} onChange={(e) => set("description", e.target.value)} /></Field></div>
+          </div>
+        </section>
+
+        <section className="space-y-3">
+          <p className="text-[12px] font-bold uppercase tracking-[0.1em] text-ink/50">Cover</p>
+          <ImageUpload value={f.coverUrl} onChange={(u) => set("coverUrl", u)} label="Cover photo" shape="wide" />
+        </section>
+
+        <section className="grid gap-4 sm:grid-cols-2">
+          <Field label="WhatsApp number" hint="Customers can message you here"><input className="field" inputMode="tel" value={f.whatsapp} onChange={(e) => set("whatsapp", e.target.value)} placeholder="98xxxxxx10" /></Field>
+          <Field label="Phone (private)" hint="Used for booking alerts. Never shown publicly."><input className="field" inputMode="tel" value={f.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
+          <div className="sm:col-span-2"><Field label="Shop address"><input className="field" value={f.address} maxLength={300} onChange={(e) => set("address", e.target.value)} /></Field></div>
+          <Field label="Locality"><input className="field" value={f.locality} onChange={(e) => set("locality", e.target.value)} /></Field>
+          <Field label="City">
+            <select className="field" value={f.city} onChange={(e) => set("city", e.target.value)}>
+              {CITIES.map((c) => <option key={c}>{c}</option>)}
+            </select>
           </Field>
-          <label className="mt-2 block cursor-pointer rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-3 py-2.5 text-center text-[12.5px] font-bold hover:bg-gray-100">
-            📤 Upload DP from device
-            <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
-              const f = e.target.files?.[0];
-              if (f) set("dpUrl", await fileToDataUrl(f));
-            }} />
-          </label>
+          <Field label="Pincode" hint="Delhi 110xxx · Noida 201xxx · Gurugram 122xxx"><input className="field" inputMode="numeric" maxLength={6} value={f.pincode} onChange={(e) => set("pincode", e.target.value)} /></Field>
+          <Field label="Opening hours (text)"><input className="field" value={f.openingHours} maxLength={120} onChange={(e) => set("openingHours", e.target.value)} placeholder="8:00 AM – 10:00 PM" /></Field>
+        </section>
 
-          <div className={`mt-4 rounded-3xl p-4 ${form.isOpen ? "bg-green-50 ring-1 ring-green-200" : "bg-gray-100"}`}>
-            <div className="flex items-center justify-between">
-              <p className="text-[14px] font-black">{form.isOpen ? "● Open now" : "○ Closed"}</p>
-              <button onClick={() => set("isOpen", !form.isOpen)} className={`relative h-8 w-14 rounded-full transition ${form.isOpen ? "bg-green-600" : "bg-gray-300"}`}>
-                <span className={`absolute top-1 grid h-6 w-6 place-items-center rounded-full bg-white text-[10px] shadow transition-all ${form.isOpen ? "left-7" : "left-1"}`}>{form.isOpen ? "●" : "○"}</span>
-              </button>
-            </div>
-            <div className="mt-3 space-y-2">
-              <Field label="Next closing (shown when open)"><input value={form.nextClosingAt ?? ""} onChange={(e) => set("nextClosingAt", e.target.value)} placeholder="Closes 10:30 PM today" className={inputCls} /></Field>
-              <Field label="Next opening (shown when closed)"><input value={form.nextOpeningAt ?? ""} onChange={(e) => set("nextOpeningAt", e.target.value)} placeholder="Opens 7:00 AM tomorrow" className={inputCls} /></Field>
-            </div>
-          </div>
-        </div>
+        <section className="grid gap-4 md:grid-cols-2">
+          <div className="glass-strong rounded-2xl p-4"><Switch checked={f.pickupAvailable} onChange={(v) => set("pickupAvailable", v)} label="Pickup" /></div>
+          <div className="glass-strong rounded-2xl p-4"><Switch checked={f.deliveryAvailable} onChange={(v) => set("deliveryAvailable", v)} label="Delivery" /></div>
+          <Field label="Delivery fee (₹)"><input className="field" inputMode="decimal" value={f.deliveryFee} onChange={(e) => set("deliveryFee", e.target.value)} /></Field>
+          <Field label="Free delivery above (₹)" hint="0 for no threshold"><input className="field" inputMode="decimal" value={f.freeDeliveryAbove} onChange={(e) => set("freeDeliveryAbove", e.target.value)} /></Field>
+          <Field label="Minimum order (₹)"><input className="field" inputMode="decimal" value={f.minOrder} onChange={(e) => set("minOrder", e.target.value)} /></Field>
+        </section>
 
-        {/* details */}
-        <div className="rounded-3xl border border-gray-200 bg-white p-5 sm:p-6">
-          <div className="grid gap-3.5">
-            <Field label="Shop name"><input value={form.shopName ?? ""} onChange={(e) => set("shopName", e.target.value)} className={inputCls} /></Field>
-            <Field label="Tagline / description"><textarea value={form.description ?? ""} onChange={(e) => set("description", e.target.value)} rows={3} className={inputCls} /></Field>
-            <div className="grid gap-3.5 sm:grid-cols-2">
-              <Field label="Phone"><input value={form.phone ?? ""} onChange={(e) => set("phone", e.target.value)} className={inputCls} /></Field>
-              <Field label="WhatsApp number" hint="Customers tap to chat — include country code optional"><input value={form.whatsapp ?? ""} onChange={(e) => set("whatsapp", e.target.value)} className={inputCls} /></Field>
-            </div>
-            <Field label="Address"><input value={form.address ?? ""} onChange={(e) => set("address", e.target.value)} className={inputCls} /></Field>
-            <div className="grid gap-3.5 sm:grid-cols-3">
-              <Field label="City"><input value={form.city ?? ""} onChange={(e) => set("city", e.target.value)} className={inputCls} /></Field>
-              <Field label="Category"><input value={form.category ?? ""} onChange={(e) => set("category", e.target.value)} className={inputCls} /></Field>
-              <Field label="Opening hours"><input value={form.openingHours ?? ""} onChange={(e) => set("openingHours", e.target.value)} className={inputCls} /></Field>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-gray-200 p-4">
-                <label className="flex items-center justify-between text-[13.5px] font-black">
-                  🛵 Home delivery
-                  <input type="checkbox" checked={!!form.deliveryAvailable} onChange={(e) => set("deliveryAvailable", e.target.checked)} className="h-5 w-5 accent-green-700" />
-                </label>
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <Field label="Fee ₹"><input value={form.deliveryFee ?? "0"} onChange={(e) => set("deliveryFee", e.target.value)} type="number" className={inputCls} /></Field>
-                  <Field label="Radius km"><input value={form.deliveryRadiusKm ?? "5"} onChange={(e) => set("deliveryRadiusKm", e.target.value)} type="number" className={inputCls} /></Field>
-                </div>
-              </div>
-              <div className="rounded-2xl border border-gray-200 p-4">
-                <label className="flex items-center justify-between text-[13.5px] font-black">
-                  🏃 Store pickup
-                  <input type="checkbox" checked={!!form.pickupAvailable} onChange={(e) => set("pickupAvailable", e.target.checked)} className="h-5 w-5 accent-green-700" />
-                </label>
-                <p className="mt-2 text-[12.5px] text-gray-500">Customers choose <b>{form.pickupAvailable ? "pickup (free)" : "delivery only"}</b> at checkout and in chat. {form.deliveryAvailable ? `Delivery ${inr(form.deliveryFee ?? 0)} within ${form.deliveryRadiusKm ?? 5} km.` : ""}</p>
-              </div>
-            </div>
-
-            {msg && <p className={`rounded-2xl px-4 py-3 text-[13px] font-bold ${msg.startsWith("✅") ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>{msg}</p>}
-            <button onClick={save} disabled={saving} className={`${btnPrimary} !py-3.5`}>{saving ? "Saving…" : "💾 Save — goes live instantly"}</button>
-          </div>
-        </div>
-      </div>
+        {err && <p role="alert" className="rounded-2xl bg-red-50/90 px-4 py-2.5 text-[13px] font-semibold text-red-800">{err}</p>}
+      </Glass>
     </div>
   );
 }

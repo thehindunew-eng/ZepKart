@@ -1,33 +1,62 @@
-import { NextResponse } from "next/server";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { orders, stores } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { sessionFromRequest } from "@/lib/auth";
+import { fail, ok, requireUser, route } from "@/lib/api";
+import { orderAction } from "@/lib/validators";
+import { NEXT_STATUS, restoreStock } from "@/lib/orders";
+import { refreshStore } from "@/lib/store-status";
+import { num } from "@/lib/dto";
 
-const FLOW = ["pending", "accepted", "preparing", "ready", "out_for_delivery", "delivered"];
+export const dynamic = "force-dynamic";
+type Ctx = { params: Promise<{ id: string }> };
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const session = sessionFromRequest(req);
-  if (!session) return NextResponse.json({ error: "Login required" }, { status: 401 });
-  const rows = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
-  if (!rows.length) return NextResponse.json({ error: "Order not found" }, { status: 404 });
-  const order = rows[0];
-  const st = await db.select().from(stores).where(eq(stores.id, order.storeId)).limit(1);
-  const isOwner = st.length && st[0].ownerId === session.id;
-  const isCustomer = order.customerId === session.id;
-  if (!isOwner && !isCustomer) return NextResponse.json({ error: "Not allowed" }, { status: 403 });
-  const body = await req.json();
-  const patch: Record<string, unknown> = {};
-  if ("status" in body) {
-    const next = String(body.status);
-    // customers can only cancel pending orders
-    if (!isOwner && next !== "cancelled") return NextResponse.json({ error: "Only the store can advance status" }, { status: 403 });
-    if (!isOwner && order.status !== "pending") return NextResponse.json({ error: "Too late to cancel" }, { status: 400 });
-    patch.status = next;
+export const GET = route<Ctx>(async (_req, ctx) => {
+  const user = await requireUser();
+  const { id } = await ctx.params;
+  const [o] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
+  if (!o) fail(404, "Booking not found");
+  const [store] = await db.select().from(stores).where(eq(stores.id, o.storeId)).limit(1);
+  const isOwner = user.role === "vendor" && store?.ownerId === user.id;
+  const isCustomer = o.customerId === user.id;
+  if (!isOwner && !isCustomer) fail(403, "Not allowed");
+  return ok({ id: o.id, status: o.status, total: num(o.total), fulfillment: o.fulfillment, createdAt: o.createdAt, updatedAt: o.updatedAt });
+});
+
+/** Vendor moves a booking forward; the customer can cancel while it is still new. */
+export const PATCH = route<Ctx>(async (req, ctx) => {
+  const user = await requireUser();
+  const { id } = await ctx.params;
+  const body = orderAction.parse(await req.json());
+  const [o] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
+  if (!o) fail(404, "Booking not found");
+  const [storeRow] = await db.select().from(stores).where(eq(stores.id, o.storeId)).limit(1);
+
+  if (body.action === "cancel") {
+    if (o.customerId !== user.id) fail(403, "Not allowed");
+    if (o.status !== "new") fail(409, "This booking can no longer be cancelled");
+    await db.transaction(async (tx) => {
+      await restoreStock(tx as never, o.id);
+      await tx.update(orders).set({ status: "cancelled", updatedAt: new Date() }).where(eq(orders.id, o.id));
+    });
+  } else {
+    if (user.role !== "vendor" || storeRow?.ownerId !== user.id) fail(403, "Only the store can update this booking");
+    await refreshStore(storeRow);
+    const step = (NEXT_STATUS[o.status] ?? []).find((s) => s.action === body.action || (body.action === "complete" && s.action === "complete"));
+    if (!step) fail(409, "This booking can't move to that step");
+    if (body.action === "ready" && o.fulfillment !== "pickup") fail(409, "Delivery orders go out for delivery instead");
+    if (body.action === "out_for_delivery" && o.fulfillment !== "delivery") fail(409, "Pickup orders are marked ready for pickup");
+    if (body.action === "reject") {
+      await db.transaction(async (tx) => {
+        await restoreStock(tx as never, o.id);
+        await tx
+          .update(orders)
+          .set({ status: "rejected", rejectReason: body.reason || null, updatedAt: new Date() })
+          .where(eq(orders.id, o.id));
+      });
+    } else {
+      await db.update(orders).set({ status: step.to, updatedAt: new Date() }).where(eq(orders.id, o.id));
+    }
   }
-  if (isOwner && "note" in body) patch.note = body.note;
-  (patch as { updatedAt?: Date }).updatedAt = new Date();
-  const updated = await db.update(orders).set(patch).where(eq(orders.id, id)).returning();
-  return NextResponse.json({ order: updated[0], next: FLOW[FLOW.indexOf(updated[0].status) + 1] ?? null });
-}
+  const [fresh] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);
+  return ok({ id: fresh.id, status: fresh.status, updatedAt: fresh.updatedAt });
+});
