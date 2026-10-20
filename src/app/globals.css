@@ -1,0 +1,195 @@
+@import "tailwindcss";
+
+/* ZepKart: Zepto-style storefront. Light grey canvas, white rounded cards, green brand, dark pill actions. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-ink: #0c1222;
+  --color-leaf: #16a34a;
+  --color-leaf-deep: #15803d;
+  --color-gold: #f59e0b;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+body {
+  font-family: var(--font-sans);
+  background: #f6f7f9;
+  color: #0c1222;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Cards */
+.glass,
+.glass-strong {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 24px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 16px rgba(15, 23, 42, 0.04);
+}
+.glass-dark {
+  background: #0c1222;
+  color: #ffffff;
+  border-radius: 24px;
+}
+.glass-pill {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 9999px;
+}
+
+/* Buttons: dark pill is the primary action, green pill for brand CTAs. Colours are unchanged. */
+.btn-primary,
+.btn-dark {
+  background: #0c1222;
+  color: #ffffff;
+}
+.btn-primary:hover:not(:disabled),
+.btn-dark:hover:not(:disabled) {
+  background: #1f2937;
+}
+.btn-gold {
+  background: #16a34a;
+  color: #ffffff;
+}
+.btn-gold:hover:not(:disabled) {
+  background: #15803d;
+}
+.btn-danger {
+  background: #dc2626;
+  color: #ffffff;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+/*
+ * 3D glass buttons. Every clickable button gets a glossy highlight, a lit top edge, a bulged
+ * lower edge and a press-down on click. Background colours come from each button's own classes,
+ * so brand colours stay the same. Lives in the components layer so utility classes still win.
+ */
+@layer components {
+  button:not(.no-3d):not(:disabled),
+  a.btn3d {
+    position: relative;
+    isolation: isolate;
+    -webkit-tap-highlight-color: transparent;
+    backdrop-filter: saturate(140%) blur(4px);
+    -webkit-backdrop-filter: saturate(140%) blur(4px);
+    transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.15s ease;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.55),
+      inset 0 -2px 0 rgba(0, 0, 0, 0.14),
+      0 4px 0 rgba(0, 0, 0, 0.13),
+      0 10px 18px -10px rgba(0, 0, 0, 0.45);
+  }
+  button:not(.no-3d):not(:disabled)::before,
+  a.btn3d::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.14) 42%, rgba(255, 255, 255, 0) 52%, rgba(0, 0, 0, 0.06) 100%);
+  }
+  button:not(.no-3d):not(:disabled):hover,
+  a.btn3d:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.04) saturate(1.05);
+  }
+  button:not(.no-3d):not(:disabled):active,
+  a.btn3d:active {
+    transform: translateY(3px);
+    filter: brightness(0.97);
+    box-shadow:
+      inset 0 2px 5px rgba(0, 0, 0, 0.22),
+      0 1px 0 rgba(0, 0, 0, 0.12),
+      0 3px 8px -6px rgba(0, 0, 0, 0.35);
+  }
+  button:not(.no-3d):not(:disabled):focus-visible,
+  a.btn3d:focus-visible {
+    outline: 3px solid rgba(22, 163, 74, 0.45);
+    outline-offset: 2px;
+  }
+  button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+}
+
+/* Inputs */
+.field {
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 0.65rem 0.9rem;
+  font-size: 14px;
+  color: #0c1222;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field::placeholder {
+  color: #9ca3af;
+}
+.field:focus {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+}
+.field:disabled {
+  opacity: 0.6;
+}
+
+.shimmer {
+  background: linear-gradient(90deg, #eef0f3 0%, #f8f9fb 50%, #eef0f3 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.rise {
+  animation: rise 0.35s ease-out both;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.clamp2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Chat bubbles */
+.chat-bubble-me {
+  background: #0c1222;
+  color: white;
+  border-radius: 18px 18px 4px 18px;
+}
+.chat-bubble-them {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 18px 18px 18px 4px;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+.live-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
