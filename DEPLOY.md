@@ -25,6 +25,9 @@ curl -X POST https://<your-domain>/api/seed -H "x-seed-token: <SEED_TOKEN>"
 ```
 Seeding is not idempotent; the endpoint returns `{"seeded":false}` if data already exists.
 
+The demo buttons on `/auth` also create this data on their first click if the database is empty.
+To keep production free of demo accounts, set `DISABLE_DEMO_SEED=1` and seed only from a trusted machine.
+
 ## 5. Deploy
 Import the GitHub repo in Vercel (framework: Next.js). Build command `npm run build`.
 Demo accounts are listed on `/auth`. Change or remove them before accepting real customers.

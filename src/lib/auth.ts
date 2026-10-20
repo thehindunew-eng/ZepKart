@@ -50,21 +50,30 @@ export function verifySession(token: string): SessionUser | null {
   }
 }
 
-/** True only when the request arrived over HTTPS (Vercel and proxies set x-forwarded-proto). */
+/**
+ * True when the browser is on HTTPS. Proxies (Vercel, the preview host) forward x-forwarded-proto;
+ * the Origin header of a POST is a second signal and is always sent by browsers over https.
+ */
 async function isSecureRequest(): Promise<boolean> {
   const h = await headers();
-  const proto = h.get("x-forwarded-proto") ?? h.get("x-forwarded-protocol") ?? "";
-  return proto.split(",")[0].trim() === "https";
+  const proto = (h.get("x-forwarded-proto") ?? h.get("x-forwarded-protocol") ?? "").split(",")[0].trim();
+  if (proto) return proto === "https";
+  return (h.get("origin") ?? "").startsWith("https://");
 }
 
+/**
+ * Session cookie. On HTTPS it is SameSite=None; Secure so it survives when the app is
+ * shown inside another site's iframe (the preview). Lax cookies are dropped there, which
+ * made login succeed but the session vanish. Plain http keeps SameSite=Lax, since browsers
+ * drop Secure cookies on http origins.
+ */
 export async function setSessionCookie(user: SessionUser) {
   const store = await cookies();
+  const secure = await isSecureRequest();
   store.set(COOKIE_NAME, signSession(user), {
     httpOnly: true,
-    sameSite: "lax",
-    // A Secure cookie is dropped by browsers on plain-http origins, which made
-    // accounts look unable to log in when served over http. Only mark it Secure on https.
-    secure: await isSecureRequest(),
+    sameSite: secure ? "none" : "lax",
+    secure,
     path: "/",
     maxAge: MAX_AGE,
   });
@@ -72,7 +81,8 @@ export async function setSessionCookie(user: SessionUser) {
 
 export async function clearSessionCookie() {
   const store = await cookies();
-  store.delete(COOKIE_NAME);
+  const secure = await isSecureRequest();
+  store.set(COOKIE_NAME, "", { httpOnly: true, sameSite: secure ? "none" : "lax", secure, path: "/", maxAge: 0 });
 }
 
 /** Returns the current user with fresh data from the database, or null. */

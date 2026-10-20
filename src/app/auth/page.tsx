@@ -4,7 +4,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Loader2, Mail, Lock, User, Phone, Store, Warehouse, ShoppingBag, ArrowRight, ShieldCheck, KeyRound } from "lucide-react";
-import { api, ApiError } from "@/hooks/useApi";
+import { api } from "@/hooks/useApi";
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
 import { Button, Field } from "@/components/ui";
@@ -57,24 +57,12 @@ function AuthInner() {
     router.refresh();
   };
 
-  const login = async (email: string, password: string) => {
-    try {
-      return await api<{ user: { role: string } }>("/api/auth/login", { json: { email, password } });
-    } catch (e) {
-      // Demo accounts may not exist on a fresh database. Seed once, then retry.
-      if (e instanceof ApiError && (e.status === 401 || e.status === 404)) {
-        await api("/api/seed", { method: "POST" });
-        return await api<{ user: { role: string } }>("/api/auth/login", { json: { email, password } });
-      }
-      throw e;
-    }
-  };
-
   const demoLogin = async (kind: keyof typeof DEMO) => {
     setBusy(kind);
     setErr(null);
     try {
-      const r = await login(DEMO[kind].email, DEMO[kind].password);
+      // Server-side: creates the demo data on a fresh database, then signs this role in.
+      const r = await api<{ user: { role: string } }>("/api/auth/demo", { json: { role: kind } });
       await finish(r.user.role);
     } catch (e) {
       setErr((e as Error).message);
