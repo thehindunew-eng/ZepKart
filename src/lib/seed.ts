@@ -1,16 +1,17 @@
 import { eq, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { db } from "@/db";
-import { adCampaigns, extraServices, messages, orderItems, orderServices, orders, payments, products, restockLines, restockRequests, stores, threads, users, wholesalerProducts, wholesalers } from "@/db/schema";
+import { adCampaigns, extraServices, featuredClips, messages, orderItems, orderServices, orders, payments, products, restockLines, restockRequests, stores, supportTickets, threads, users, wholesalerProducts, wholesalers } from "@/db/schema";
 import { hashPassword } from "@/lib/auth";
-import { DEMO_CAMPAIGNS, DEMO_CUSTOMERS, DEMO_STORES, DEMO_VENDORS, DEMO_WHOLESALERS } from "@/lib/seed-data";
+import { DEMO_ADMIN, DEMO_CAMPAIGNS, DEMO_CUSTOMERS, DEMO_STORES, DEMO_VENDORS, DEMO_WHOLESALERS } from "@/lib/seed-data";
 import { gstInclusive, premiumQuote, quoteAd } from "@/lib/pricing";
-import { geoFor } from "@/lib/ncr";
+import { geoFor, locateByPincode } from "@/lib/ncr";
 import { istAt, istParts } from "@/lib/time";
 
 const VENDOR_PASSWORD = "vendor123";
 const CUSTOMER_PASSWORD = "customer123";
 const WHOLESALER_PASSWORD = "wholesaler123";
+const ADMIN_PASSWORD = "admin123";
 /** Index of the demo store that starts on the Premium plan (FreshDaily Kirana, vendor1). */
 const PREMIUM_STORE = 0;
 
@@ -35,6 +36,7 @@ export async function seedDemo() {
   const vendorHash = await hashPassword(VENDOR_PASSWORD);
   const customerHash = await hashPassword(CUSTOMER_PASSWORD);
   const wholesalerHash = await hashPassword(WHOLESALER_PASSWORD);
+  const adminHash = await hashPassword(ADMIN_PASSWORD);
 
   await db.transaction(async (tx) => {
     const vendors = await tx
@@ -45,6 +47,8 @@ export async function seedDemo() {
       .insert(users)
       .values(DEMO_CUSTOMERS.map((c) => ({ email: c.email, name: c.name, phone: c.phone, role: "customer", passwordHash: customerHash })))
       .returning();
+
+    await tx.insert(users).values({ email: DEMO_ADMIN.email, name: DEMO_ADMIN.name, phone: DEMO_ADMIN.phone, role: "admin", passwordHash: adminHash });
 
     const wholesalerUsers = await tx
       .insert(users)
@@ -228,7 +232,7 @@ export async function seedDemo() {
     ]);
 
     // Ad campaigns with mock payments (live: active right now)
-    for (const c of DEMO_CAMPAIGNS) {
+    for (const [ci, c] of DEMO_CAMPAIGNS.entries()) {
       const startsAt = new Date(now.getTime() - c.daysAgo * 86400000);
       const endsAt = new Date(startsAt.getTime() + c.planDays * 86400000);
       const q = quoteAd({ durationSec: c.durationSec, planDays: c.planDays, activeCampaigns: 3, month });
@@ -269,7 +273,73 @@ export async function seedDemo() {
         status: "succeeded",
         createdAt: startsAt,
       });
+      // Approved campaigns appear in Featured.
+      await tx.insert(featuredClips).values({
+        title: c.title,
+        subtitle: DEMO_STORES[c.store].shopName,
+        videoUrl: c.videoUrl,
+        durationSec: c.durationSec,
+        storeId: storeRows[c.store].id,
+        campaignId: camp.id,
+        sortOrder: ci,
+        isActive: true,
+        endsAt,
+        createdAt: startsAt,
+      });
     }
+
+    // Paid ad requests waiting in the admin queue: one vendor, one wholesaler.
+    const pendingAds = [
+      { storeIdx: 2, wholesalerIdx: -1, title: "Dairy & bakery this weekend", videoUrl: "/demo-ads/clip-dairy-bakery.mp4", planDays: 7, durationSec: 12 },
+      { storeIdx: -1, wholesalerIdx: 0, title: "Bulk basmati for shop owners", videoUrl: "/demo-ads/clip-weekend-deals.mp4", planDays: 15, durationSec: 12 },
+    ];
+    for (const p of pendingAds) {
+      const q = quoteAd({ durationSec: p.durationSec, planDays: p.planDays, activeCampaigns: 3, month });
+      const [req] = await tx
+        .insert(adCampaigns)
+        .values({
+          storeId: p.storeIdx >= 0 ? storeRows[p.storeIdx].id : null,
+          wholesalerId: p.wholesalerIdx >= 0 ? wholesalerRows[p.wholesalerIdx].id : null,
+          requesterId: p.storeIdx >= 0 ? vendors[DEMO_STORES[p.storeIdx].owner].id : wholesalerUsers[p.wholesalerIdx].id,
+          title: p.title,
+          videoUrl: p.videoUrl,
+          durationSec: p.durationSec,
+          planDays: q.planDays,
+          seasonName: q.seasonName,
+          seasonMultiplier: String(q.seasonMultiplier),
+          demandMultiplier: String(q.demandMultiplier),
+          lengthFactor: String(q.lengthFactor),
+          planDiscountPct: String(q.planDiscountPct),
+          baseAmount: String(q.base),
+          discountAmount: String(q.discount),
+          taxableAmount: String(q.taxable),
+          gstAmount: String(q.gst),
+          total: String(q.total),
+          status: "requested",
+          createdAt: new Date(now.getTime() - 3600000),
+        })
+        .returning();
+      await tx.insert(payments).values({
+        userId: req.requesterId,
+        storeId: req.storeId,
+        wholesalerId: req.wholesalerId,
+        campaignId: req.id,
+        purpose: "ad",
+        amount: String(q.total),
+        method: "upi",
+        reference: ref(),
+        maskedDetails: "UPI · ad***@okicici",
+        status: "succeeded",
+      });
+    }
+
+    await tx.insert(supportTickets).values({
+      userId: customers[1].id,
+      name: DEMO_CUSTOMERS[1].name,
+      contact: DEMO_CUSTOMERS[1].phone,
+      topic: "delivery",
+      message: "My delivery arrived 10 minutes after the window. Can the rider share an updated ETA next time?",
+    });
 
     // Bookings across the status flow
     type Seed = {
@@ -338,6 +408,13 @@ export async function seedDemo() {
           etaMinutes: st.etaMinutes,
           createdAt,
           updatedAt: createdAt,
+          ...(o.fulfillment === "delivery" && o.pincode && locateByPincode(o.pincode)
+            ? { destLat: String(locateByPincode(o.pincode)!.lat), destLng: String(locateByPincode(o.pincode)!.lng) }
+            : {}),
+          // Demo rider already on the way (dispatched 4 minutes ago) so Track shows live progress.
+          ...(o.status === "out_for_delivery"
+            ? { dispatchedAt: new Date(now.getTime() - 4 * 60000), riderName: "Ravi Kumar", riderVehicle: "Bike · Honda Activa", riderPhone: "9811223344" }
+            : {}),
         })
         .returning();
       await tx.insert(orderItems).values(

@@ -110,13 +110,13 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-labelledby={titleId}>
-      <button aria-label="Close" className="absolute inset-0 bg-ink/25 backdrop-blur-[3px]" onClick={onClose} />
+      <button aria-label="Close" className="no-3d absolute inset-0 bg-ink/25 backdrop-blur-[3px]" onClick={onClose} />
       <div ref={ref} tabIndex={-1} className={cn("glass-strong rise relative flex max-h-[92vh] w-full flex-col rounded-t-[30px] sm:rounded-[30px]", wide ? "sm:max-w-2xl" : "sm:max-w-lg")}>
         <div className="flex items-center justify-between gap-3 border-b border-ink/5 px-6 py-4">
           <h3 id={titleId} className="text-[17px] font-extrabold tracking-tight">
             {title}
           </h3>
-          <button onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-full bg-white/70 hover:bg-white">
+          <button onClick={onClose} aria-label="Close" className="no-3d grid h-9 w-9 place-items-center rounded-full bg-white/70 hover:bg-white">
             <X className="h-4 w-4" />
           </button>
         </div>

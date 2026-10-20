@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
+import { timingSafeEqual } from "node:crypto";
 import { db } from "@/db";
 import { stores, users, wholesalers } from "@/db/schema";
-import { hashPassword, setSessionCookie } from "@/lib/auth";
+import { adminAccessPassword, hashPassword, setSessionCookie } from "@/lib/auth";
 import { ok, route, fail, safeUser } from "@/lib/api";
 import { signupSchema } from "@/lib/validators";
 import { CITIES, AREAS, geoFor, type City } from "@/lib/ncr";
@@ -10,8 +11,18 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_PIN: Record<City, string> = { Delhi: "110001", Noida: "201301", Gurugram: "122002" };
 
+function samePassword(a: string, b: string) {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
 export const POST = route(async (req) => {
   const body = signupSchema.parse(await req.json());
+  if (body.role === "admin") {
+    const expected = adminAccessPassword();
+    if (!expected || !samePassword(body.adminCode ?? "", expected)) fail(403, "Admin access password is incorrect");
+  }
   const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, body.email)).limit(1);
   if (existing.length) fail(409, "An account with this email already exists");
 

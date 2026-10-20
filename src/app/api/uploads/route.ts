@@ -1,12 +1,14 @@
-import { ok, requireVendor, route, fail } from "@/lib/api";
+import { ok, requireUser, route, fail } from "@/lib/api";
 import { MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, readVideoDurationSec, saveFile, validateUpload } from "@/lib/media";
 import { MAX_AD_SECONDS } from "@/lib/pricing";
 
 export const dynamic = "force-dynamic";
 
-/** Vendor uploads: images (DP, cover, product, service) or a short advertisement video. */
+/** Uploads: images (DP, cover, product, service) or a short advertisement video. */
 export const POST = route(async (req) => {
-  await requireVendor();
+  // Vendors, wholesalers (ad videos) and admins (featured clips) can upload. Customers can't.
+  const uploader = await requireUser();
+  if (!["vendor", "wholesaler", "admin"].includes(uploader.role)) fail(403, "Only store, wholesaler or admin accounts can upload");
   const form = await req.formData();
   const file = form.get("file");
   const kind = form.get("kind") === "video" ? "video" : "image";

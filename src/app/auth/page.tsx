@@ -3,7 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, Mail, Lock, User, Phone, Store, Warehouse, ShoppingBag, ArrowRight } from "lucide-react";
+import { Loader2, Mail, Lock, User, Phone, Store, Warehouse, ShoppingBag, ArrowRight, ShieldCheck, KeyRound } from "lucide-react";
 import { api, ApiError } from "@/hooks/useApi";
 import { useAuth } from "@/components/AuthProvider";
 import { useToast } from "@/components/Toast";
@@ -13,12 +13,22 @@ import { CITIES } from "@/lib/ncr";
 import { cn } from "@/lib/utils";
 
 type Role = "customer" | "vendor" | "wholesaler";
+/** "admin" is a separate form reached only from the login tab, and needs the admin access password. */
+type Mode = "login" | "signup" | "admin";
 
 const DEMO = {
   customer: { email: "customer@zepkart.demo", password: "customer123", label: "Customer", icon: ShoppingBag },
   vendor: { email: "vendor1@zepkart.demo", password: "vendor123", label: "Vendor", icon: Store },
   wholesaler: { email: "wholesaler1@zepkart.demo", password: "wholesaler123", label: "Wholesaler", icon: Warehouse },
 } as const;
+
+/** Shown under the demo buttons so every seeded login is easy to find. */
+const DEMO_LOGINS = [
+  { role: "Customer", email: "customer@zepkart.demo", password: "customer123" },
+  { role: "Vendor", email: "vendor1@zepkart.demo", password: "vendor123" },
+  { role: "Wholesaler", email: "wholesaler1@zepkart.demo", password: "wholesaler123" },
+  { role: "Admin", email: "admin@zepkart.demo", password: "admin123" },
+];
 
 const ROLE_COPY: Record<Role, { label: string; hint: string; shopLabel: string }> = {
   customer: { label: "Customer", hint: "Shop nearby stores and compare prices.", shopLabel: "" },
@@ -32,16 +42,16 @@ function AuthInner() {
   const { refresh } = useAuth();
   const { toast } = useToast();
   const next = params.get("next");
-  const [mode, setMode] = useState<"login" | "signup">(params.get("mode") === "signup" ? "signup" : "login");
+  const [mode, setMode] = useState<Mode>(params.get("mode") === "signup" ? "signup" : "login");
   const initialRole = params.get("role");
   const [role, setRole] = useState<Role>(initialRole === "vendor" || initialRole === "wholesaler" ? initialRole : "customer");
   const [busy, setBusy] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", shopName: "", gstin: "", city: "Delhi" as (typeof CITIES)[number] });
+  const [form, setForm] = useState({ name: "", email: "", password: "", phone: "", shopName: "", gstin: "", city: "Delhi" as (typeof CITIES)[number], adminCode: "" });
   const [err, setErr] = useState<string | null>(null);
 
   const finish = async (r: string) => {
     await refresh();
-    const fallback = r === "vendor" ? "/vendor" : r === "wholesaler" ? "/wholesaler" : "/";
+    const fallback = r === "vendor" ? "/vendor" : r === "wholesaler" ? "/wholesaler" : r === "admin" ? "/admin" : "/";
     const dest = next && next.startsWith("/") && !next.startsWith("//") ? next : fallback;
     router.replace(dest);
     router.refresh();
@@ -81,7 +91,8 @@ function AuthInner() {
         const r = await api<{ user: { role: string } }>("/api/auth/login", { json: { email: form.email, password: form.password } });
         await finish(r.user.role);
       } else {
-        const body: Record<string, unknown> = { name: form.name, email: form.email, password: form.password, phone: form.phone, role };
+        const body: Record<string, unknown> = { name: form.name, email: form.email, password: form.password, phone: form.phone, role: mode === "admin" ? "admin" : role };
+        if (mode === "admin") body.adminCode = form.adminCode;
         if (role === "vendor") {
           body.shopName = form.shopName;
           body.city = form.city;
@@ -92,7 +103,7 @@ function AuthInner() {
           body.city = form.city;
         }
         const r = await api<{ user: { role: string } }>("/api/auth/signup", { json: body });
-        toast("Welcome to ZepKart");
+        toast(mode === "admin" ? "Admin account created" : "Welcome to ZepKart");
         await finish(r.user.role);
       }
     } catch (e) {
@@ -136,16 +147,41 @@ function AuthInner() {
             })}
           </div>
           {err && !busy && <p className="mt-4 text-[13px] font-semibold text-red-700">{err}</p>}
+
+          <details className="mt-6 rounded-2xl border border-gray-200 bg-white p-4 text-[13px]">
+            <summary className="cursor-pointer font-bold text-ink">Demo logins</summary>
+            <table className="mt-3 w-full text-left">
+              <thead className="text-[11.5px] uppercase tracking-wider text-ink/45">
+                <tr><th className="py-1.5 font-bold">Role</th><th className="py-1.5 font-bold">Email</th><th className="py-1.5 font-bold">Password</th></tr>
+              </thead>
+              <tbody className="font-semibold text-ink/80">
+                {DEMO_LOGINS.map((d) => (
+                  <tr key={d.role} className="border-t border-gray-100">
+                    <td className="py-2 pr-3">{d.role}</td>
+                    <td className="py-2 pr-3 font-mono text-[12px]">{d.email}</td>
+                    <td className="py-2 font-mono text-[12px]">{d.password}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
         </section>
 
         <section className="rounded-3xl border border-gray-200 bg-white p-6 sm:p-8">
-          <div className="grid grid-cols-2 rounded-full bg-gray-100 p-1 text-[13.5px] font-bold">
-            {(["login", "signup"] as const).map((m) => (
-              <button key={m} onClick={() => setMode(m)} className={cn("rounded-full py-2 transition", mode === m ? "bg-white text-ink shadow-sm" : "text-ink/55")}>
-                {m === "login" ? "Log in" : "Sign up"}
-              </button>
-            ))}
-          </div>
+          {mode === "admin" ? (
+            <div className="flex items-center justify-between rounded-full bg-gray-100 p-1 pl-4 text-[13.5px] font-bold">
+              <span className="flex items-center gap-2 text-ink"><ShieldCheck className="h-4 w-4 text-leaf-deep" /> Admin signup</span>
+              <button onClick={() => setMode("login")} className="rounded-full bg-white px-4 py-2 text-ink shadow-sm">Back to log in</button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 rounded-full bg-gray-100 p-1 text-[13.5px] font-bold">
+              {(["login", "signup"] as const).map((m) => (
+                <button key={m} onClick={() => setMode(m)} className={cn("rounded-full py-2 transition", mode === m ? "bg-white text-ink shadow-sm" : "text-ink/55")}>
+                  {m === "login" ? "Log in" : "Sign up"}
+                </button>
+              ))}
+            </div>
+          )}
 
           {mode === "signup" && (
             <div className="mt-5 grid grid-cols-3 gap-2">
@@ -157,6 +193,7 @@ function AuthInner() {
             </div>
           )}
           {mode === "signup" && <p className="mt-2 text-[12.5px] text-ink/55">{ROLE_COPY[role].hint}</p>}
+          {mode === "admin" && <p className="mt-3 text-[12.5px] text-ink/55">Admins manage stores, wholesalers, ads and featured clips. Enter the admin access password to continue.</p>}
 
           <form onSubmit={submit} className="mt-5 space-y-4">
             {mode === "signup" && (
@@ -206,10 +243,26 @@ function AuthInner() {
                 )}
               </>
             )}
+            {mode === "admin" && (
+              <Field label="Admin access password" hint="Ask the ZepKart team for the demo admin password">
+                <div className="relative">
+                  <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" />
+                  <input required type="password" value={form.adminCode} onChange={(e) => setForm({ ...form, adminCode: e.target.value })} className="field pl-10" autoComplete="off" />
+                </div>
+              </Field>
+            )}
             <Button type="submit" variant="dark" size="lg" block loading={busy === "form"}>
-              {mode === "login" ? "Log in" : `Create ${ROLE_COPY[role].label.toLowerCase()} account`}
+              {mode === "login" ? "Log in" : mode === "admin" ? "Create admin account" : `Create ${ROLE_COPY[role].label.toLowerCase()} account`}
             </Button>
           </form>
+
+          {mode === "login" && (
+            <p className="mt-5 text-center text-[13px] text-ink/55">
+              <button onClick={() => { setErr(null); setMode("admin"); }} className="font-bold text-ink underline-offset-4 hover:underline">
+                Signup as admin
+              </button>
+            </p>
+          )}
         </section>
       </div>
     </div>

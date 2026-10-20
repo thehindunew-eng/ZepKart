@@ -55,3 +55,42 @@ export function geoFor(city: string, locality: string | null | undefined, jitter
   const base = (locality && AREA_GEO[locality]) || CITY_CENTRE[(CITIES as readonly string[]).includes(city) ? (city as City) : "Delhi"];
   return { lat: Number((base[0] + jitter * 0.0013).toFixed(6)), lng: Number((base[1] - jitter * 0.0011).toFixed(6)) };
 }
+
+/** Main pincode for each serviceable locality. */
+export const AREA_PIN: Record<string, string> = {
+  "Lajpat Nagar": "110024",
+  "Karol Bagh": "110005",
+  "Connaught Place": "110001",
+  "Dwarka Sector 10": "110075",
+  Saket: "110017",
+  "Rohini Sector 7": "110085",
+  "Chandni Chowk": "110006",
+  Janakpuri: "110058",
+  "Sector 18": "201301",
+  "Sector 62": "201309",
+  "Sector 15": "201301",
+  "Sector 76": "201301",
+  "Greater Noida West": "201306",
+  "Sector 50": "201301",
+  "DLF Phase 3": "122002",
+  "Sector 56": "122011",
+  "Cyber City": "122002",
+  "Sector 49": "122018",
+  "Golf Course Road": "122002",
+  "Sohna Road": "122018",
+};
+
+export type PincodeLocation = { pincode: string; city: City; locality: string; lat: number; lng: number; exact: boolean };
+
+/**
+ * Resolves an NCR pincode to a city, locality and coordinates. Pincodes that aren't mapped to a
+ * locality fall back to the city centre (exact = false). Returns null outside NCR.
+ */
+export function locateByPincode(pin: string): PincodeLocation | null {
+  const city = cityFromPincode(pin);
+  if (!city) return null;
+  const match = Object.entries(AREA_PIN).find(([, p]) => p === pin);
+  const locality = match ? match[0] : AREAS[city][0];
+  const geo = geoFor(city, locality);
+  return { pincode: pin, city, locality, lat: geo.lat, lng: geo.lng, exact: Boolean(match) };
+}

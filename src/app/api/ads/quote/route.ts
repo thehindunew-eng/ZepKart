@@ -1,4 +1,4 @@
-import { ok, requireVendor, route } from "@/lib/api";
+import { ok, requireAdRequester, route } from "@/lib/api";
 import { adQuote } from "@/lib/validators";
 import { activeCampaignCount } from "@/lib/campaigns";
 import { quoteAd } from "@/lib/pricing";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 /** Live price for an ad: season × demand × length × plan discount, plus GST. */
 export const POST = route(async (req) => {
-  await requireVendor();
+  await requireAdRequester();
   const body = adQuote.parse(await req.json());
   const now = new Date();
   const quote = quoteAd({

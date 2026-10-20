@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
@@ -24,6 +24,13 @@ function jwtSecret(): string {
   return "zepkart-dev-only-secret";
 }
 
+/** Demo admin access password. Set ADMIN_ACCESS_PASSWORD in production; the fallback is for local demos only. */
+export function adminAccessPassword(): string | null {
+  const configured = process.env.ADMIN_ACCESS_PASSWORD;
+  if (configured) return configured;
+  return process.env.NODE_ENV === "production" ? null : "zepkart-admin-demo";
+}
+
 export const hashPassword = (pw: string) => bcrypt.hash(pw, 10);
 export const verifyPassword = (pw: string, hash: string) => bcrypt.compare(pw, hash);
 
@@ -43,12 +50,21 @@ export function verifySession(token: string): SessionUser | null {
   }
 }
 
+/** True only when the request arrived over HTTPS (Vercel and proxies set x-forwarded-proto). */
+async function isSecureRequest(): Promise<boolean> {
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto") ?? h.get("x-forwarded-protocol") ?? "";
+  return proto.split(",")[0].trim() === "https";
+}
+
 export async function setSessionCookie(user: SessionUser) {
   const store = await cookies();
   store.set(COOKIE_NAME, signSession(user), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    // A Secure cookie is dropped by browsers on plain-http origins, which made
+    // accounts look unable to log in when served over http. Only mark it Secure on https.
+    secure: await isSecureRequest(),
     path: "/",
     maxAge: MAX_AGE,
   });

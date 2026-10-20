@@ -3,7 +3,8 @@
 import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Search, Store, Film, MapPin, ArrowRight } from "lucide-react";
+import { Store, Film, MapPin, ArrowRight } from "lucide-react";
+import { SearchBox } from "@/components/SearchBox";
 import { useApi } from "@/hooks/useApi";
 import { useLocation } from "@/hooks/useLocation";
 import { ProductCard, StoreCard, type ShopProduct, type ShopStore } from "@/components/cards";
@@ -34,7 +35,7 @@ function HomeInner() {
   const storeQs = new URLSearchParams({ ...(city ? { city } : {}), ...(q ? { q } : {}), sort: sort === "distance" ? "distance" : "default" });
   const productQs = new URLSearchParams({ ...(city ? { city } : {}), ...(q ? { q } : {}), ...(category ? { category } : {}), sort, limit: "24" });
 
-  const ads = useApi<{ ads: AdItem[] }>("/api/ads/active");
+  const ads = useApi<{ ads: AdItem[] }>("/api/featured");
   const stores = useApi<{ stores: ShopStore[] }>(`/api/stores?${storeQs}&${geo}`, { poll: 30000 });
   const products = useApi<{ products: ShopProduct[] }>(`/api/products?${productQs}&${geo}`, { poll: 30000 });
 
@@ -62,6 +63,10 @@ function HomeInner() {
         </div>
       </section>
 
+      <div className="md:hidden">
+        <SearchBox />
+      </div>
+
       <section className="no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
         <CategoryChip label="All" emoji="🛒" active={!category} onClick={() => setCategory("")} />
         {CATEGORIES.map((c) => (
@@ -69,13 +74,6 @@ function HomeInner() {
         ))}
       </section>
 
-      <form action="/" className="flex items-center gap-2 md:hidden">
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" />
-          <input name="q" defaultValue={q} className="field !rounded-xl pl-10" placeholder="Search items or stores" aria-label="Search" />
-        </div>
-        <Button type="submit" variant="dark" size="md">Search</Button>
-      </form>
 
       {(ads.loading || adList.length > 0) && (
         <section className="space-y-3">

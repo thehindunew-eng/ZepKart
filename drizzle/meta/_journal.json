@@ -15,6 +15,20 @@
       "when": 1792449495645,
       "tag": "0001_wholesale_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792465901724,
+      "tag": "0002_admin_ads_featured_media",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792465961219,
+      "tag": "0003_payments_wholesaler",
+      "breakpoints": true
     }
   ]
 }

@@ -11,6 +11,7 @@ import { Badge, Button, EmptyState, Glass, Skeleton } from "@/components/ui";
 import { money, cn } from "@/lib/utils";
 import { formatDateTimeIst } from "@/lib/time";
 import { STATUS_LABEL, progressSteps } from "@/lib/order-status";
+import { TrackButton } from "@/components/TrackPanel";
 
 type OrderRow = {
   id: string;
@@ -123,6 +124,7 @@ function OrdersInner() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  {!rejected && o.status !== "completed" && <TrackButton orderId={o.id} status={o.status} fulfillment={o.fulfillment} storeName={o.store?.shopName} />}
                   {o.status === "new" && <Button variant="danger" size="sm" disabled={busy === o.id} onClick={() => cancel(o.id)}><X className="h-3.5 w-3.5" /> Cancel booking</Button>}
                   {o.store && <Link href={`/stores/${o.store.id}`}><Button variant="soft" size="sm"><Store className="h-3.5 w-3.5" /> Visit store</Button></Link>}
                   {o.status === "completed" && <span className="inline-flex items-center gap-1 text-[12.5px] font-bold text-emerald-700"><Check className="h-3.5 w-3.5" /> Thank you for shopping local</span>}

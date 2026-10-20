@@ -1,14 +1,16 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { payments } from "@/db/schema";
-import { ok, requireVendor, route } from "@/lib/api";
+import { ok, requireAdRequester, route } from "@/lib/api";
 import { num } from "@/lib/dto";
 
 export const dynamic = "force-dynamic";
 
+/** Payment history for the signed-in vendor store or wholesaler. */
 export const GET = route(async () => {
-  const { store } = await requireVendor();
-  const rows = await db.select().from(payments).where(eq(payments.storeId, store.id)).orderBy(desc(payments.createdAt)).limit(100);
+  const { storeId, wholesalerId } = await requireAdRequester();
+  const scope = storeId ? eq(payments.storeId, storeId) : eq(payments.wholesalerId, wholesalerId!);
+  const rows = await db.select().from(payments).where(scope).orderBy(desc(payments.createdAt)).limit(100);
   return ok({
     payments: rows.map((p) => ({
       id: p.id,

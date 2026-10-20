@@ -1,3 +1,4 @@
+import { locateByPincode } from "@/lib/ncr";
 import { and, eq, inArray, gt, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { extraServices, products, stores, threads, orders, orderItems, orderServices, messages } from "@/db/schema";
@@ -164,6 +165,17 @@ export async function restoreStock(tx: typeof db, orderId: string) {
   }
 }
 
+/** Delivery destination from the customer's pincode. Pickup orders have none. */
+function destinationFor(input: { fulfillment: string; pincode?: string; address?: string }) {
+  if (input.fulfillment !== "delivery") return {};
+  const loc = input.pincode ? locateByPincode(input.pincode) : null;
+  if (!loc) return {};
+  // Spread customers within the same pincode so pins don't stack on one point.
+  const seed = [...(input.address ?? "")].reduce((a, c) => a + c.charCodeAt(0), 0);
+  const jitter = ((seed % 19) - 9) * 0.0009;
+  return { destLat: String((loc.lat + jitter).toFixed(6)), destLng: String((loc.lng - jitter).toFixed(6)) };
+}
+
 export async function createOrderRecord(
   store: typeof stores.$inferSelect,
   customer: { id: string; name: string },
@@ -198,6 +210,7 @@ export async function createOrderRecord(
         gstAmount: String(priced.gstAmount),
         total: String(priced.total),
         etaMinutes: store.etaMinutes,
+        ...destinationFor(input),
       })
       .returning();
     if (priced.items.length) {

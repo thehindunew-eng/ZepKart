@@ -1,4 +1,5 @@
 import {
+  customType,
   pgTable,
   uuid,
   text,
@@ -13,6 +14,7 @@ import {
 
 const ts = (name: string) => timestamp(name, { withTimezone: true });
 const money = (name: string) => numeric(name, { precision: 12, scale: 2 });
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -182,6 +184,13 @@ export const orders = pgTable(
     total: money("total").notNull(),
     rejectReason: text("reject_reason"),
     etaMinutes: integer("eta_minutes").notNull().default(30),
+    // Delivery destination (customer pin) and the rider who was assigned when the order went out.
+    destLat: numeric("dest_lat", { precision: 9, scale: 6 }),
+    destLng: numeric("dest_lng", { precision: 9, scale: 6 }),
+    riderName: varchar("rider_name", { length: 80 }),
+    riderPhone: varchar("rider_phone", { length: 20 }),
+    riderVehicle: varchar("rider_vehicle", { length: 40 }),
+    dispatchedAt: ts("dispatched_at"),
     createdAt: ts("created_at").defaultNow().notNull(),
     updatedAt: ts("updated_at").defaultNow().notNull(),
   },
@@ -222,9 +231,10 @@ export const adCampaigns = pgTable(
   "ad_campaigns",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    storeId: uuid("store_id")
-      .notNull()
-      .references(() => stores.id, { onDelete: "cascade" }),
+    // Exactly one requester: a vendor store or a wholesaler.
+    storeId: uuid("store_id").references(() => stores.id, { onDelete: "cascade" }),
+    wholesalerId: uuid("wholesaler_id").references(() => wholesalers.id, { onDelete: "cascade" }),
+    requesterId: uuid("requester_id").references(() => users.id, { onDelete: "set null" }),
     title: varchar("title", { length: 160 }).notNull(),
     description: text("description"),
     videoUrl: text("video_url").notNull(),
@@ -240,18 +250,22 @@ export const adCampaigns = pgTable(
     taxableAmount: money("taxable_amount").notNull(),
     gstAmount: money("gst_amount").notNull(),
     total: money("total").notNull(),
-    status: varchar("status", { length: 20 }).notNull().default("draft"), // draft | active | expired
+    // draft (unpaid) -> requested (paid, waiting for admin) -> active | rejected -> expired
+    status: varchar("status", { length: 20 }).notNull().default("draft"),
+    rejectReason: text("reject_reason"),
+    reviewedAt: ts("reviewed_at"),
     startsAt: ts("starts_at"),
     endsAt: ts("ends_at"),
     createdAt: ts("created_at").defaultNow().notNull(),
   },
-  (t) => [index("ads_store_idx").on(t.storeId), index("ads_status_idx").on(t.status)],
+  (t) => [index("ads_store_idx").on(t.storeId), index("ads_status_idx").on(t.status), index("ads_wh_idx").on(t.wholesalerId)],
 );
 
 export const payments = pgTable("payments", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
   storeId: uuid("store_id").references(() => stores.id, { onDelete: "cascade" }),
+  wholesalerId: uuid("wholesaler_id").references(() => wholesalers.id, { onDelete: "set null" }),
   campaignId: uuid("campaign_id").references(() => adCampaigns.id, { onDelete: "set null" }),
   purpose: varchar("purpose", { length: 20 }).notNull().default("ad"),
   amount: money("amount").notNull(),
@@ -353,3 +367,48 @@ export const restockLines = pgTable(
   },
   (t) => [index("restock_lines_request_idx").on(t.requestId), index("restock_lines_product_idx").on(t.productId)],
 );
+
+/** Featured clips on the customer home. Only admins create or edit them. Approved ad requests add one. */
+export const featuredClips = pgTable(
+  "featured_clips",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: varchar("title", { length: 160 }).notNull(),
+    subtitle: varchar("subtitle", { length: 160 }),
+    videoUrl: text("video_url").notNull(),
+    durationSec: integer("duration_sec").notNull().default(10),
+    storeId: uuid("store_id").references(() => stores.id, { onDelete: "set null" }),
+    campaignId: uuid("campaign_id").references(() => adCampaigns.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    isActive: boolean("is_active").notNull().default(true),
+    endsAt: ts("ends_at"),
+    createdAt: ts("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("featured_sort_idx").on(t.sortOrder)],
+);
+
+/** Contact-us messages from any customer, vendor or wholesaler. Read in the admin support queue. */
+export const supportTickets = pgTable(
+  "support_tickets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    contact: varchar("contact", { length: 160 }).notNull(),
+    topic: varchar("topic", { length: 40 }).notNull(),
+    orderRef: varchar("order_ref", { length: 40 }),
+    message: text("message").notNull(),
+    status: varchar("status", { length: 12 }).notNull().default("open"), // open | resolved
+    createdAt: ts("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("support_status_idx").on(t.status)],
+);
+
+/** Uploaded images and videos. Stored in Postgres so they survive serverless deploys. */
+export const mediaFiles = pgTable("media_files", {
+  name: varchar("name", { length: 80 }).primaryKey(),
+  mime: varchar("mime", { length: 40 }).notNull(),
+  size: integer("size").notNull(),
+  data: bytea("data").notNull(),
+  createdAt: ts("created_at").defaultNow().notNull(),
+});

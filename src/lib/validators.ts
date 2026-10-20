@@ -9,7 +9,7 @@ const urlOrPath = z
   .string()
   .trim()
   .max(2000)
-  .refine((v) => v === "" || /^https?:\/\//.test(v) || /^\/api\/media\/[^/?#]+$/.test(v), "Use an https link or an uploaded file");
+  .refine((v) => v === "" || /^https?:\/\//.test(v) || /^\/api\/media\/[^/?#]+$/.test(v) || /^\/demo-ads\/[^/?#]+$/.test(v), "Use an https link or an uploaded file");
 const phone = z
   .string()
   .trim()
@@ -21,7 +21,9 @@ export const signupSchema = z.object({
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters").max(200),
   phone: z.string().trim().max(20).optional().default(""),
-  role: z.enum(["customer", "vendor", "wholesaler"]).default("customer"),
+  role: z.enum(["customer", "vendor", "wholesaler", "admin"]).default("customer"),
+  // Required only for "Signup as admin". Checked against the admin access password on the server.
+  adminCode: z.string().max(200).optional(),
   shopName: str(160).optional(), // shop name for vendors, business name for wholesalers
   gstin: z.string().trim().toUpperCase().optional(),
   city: z.enum(CITIES).optional(),
@@ -197,4 +199,60 @@ export const restockQuotes = z.object({
   quotes: z
     .array(z.object({ lineId: z.uuid(), price: money.refine((n) => n > 0, "Enter a price"), qty: z.coerce.number().int().min(0).max(100000) }))
     .min(1),
+});
+
+export const profilePatch = z.object({
+  name: str(120).min(2, "Enter your name"),
+  phone: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/[\s()-]/g, ""))
+    .refine((v) => v === "" || /^(\+?91)?[6-9]\d{9}$/.test(v), "Enter a valid 10-digit Indian mobile number")
+    .optional(),
+});
+
+export const supportCreate = z.object({
+  name: str(120).min(2, "Enter your name"),
+  contact: str(160).min(5, "Add an email or phone so we can reply"),
+  topic: z.enum(["order", "payment", "delivery", "account", "vendor", "wholesale", "other"]),
+  orderRef: z.string().trim().max(40).optional(),
+  message: str(2000).min(10, "Tell us a little more (at least 10 characters)"),
+});
+
+export const supportPatch = z.object({ status: z.enum(["open", "resolved"]) });
+
+export const adReview = z.object({
+  action: z.enum(["approve", "reject"]),
+  reason: z.string().trim().max(300).optional(),
+});
+
+export const featuredInput = z.object({
+  title: str(160).min(3, "Give the clip a title"),
+  subtitle: optStr(160),
+  videoUrl: z
+    .string()
+    .trim()
+    .refine((v) => /^\/api\/media\/[^/?#]+\.(mp4|mov)$/.test(v) || /^\/demo-ads\/[^/?#]+\.mp4$/.test(v) || /^https:\/\/.+\.mp4$/.test(v), "Upload an MP4 video or paste an https MP4 link"),
+  durationSec: z.coerce.number().int().min(1).max(60).default(15),
+  storeId: z.union([z.uuid(), z.null()]).optional(),
+  sortOrder: z.coerce.number().int().min(0).max(999).default(0),
+  isActive: z.boolean().default(true),
+});
+
+export const featuredPatch = featuredInput.partial();
+
+export const adminStorePatch = z.object({
+  shopName: str(160).min(2).optional(),
+  plan: z.enum(["basic", "premium"]).optional(),
+  isOpen: z.boolean().optional(),
+  pickupAvailable: z.boolean().optional(),
+  deliveryAvailable: z.boolean().optional(),
+  deliveryFee: money.optional(),
+  freeDeliveryAbove: money.optional(),
+  minOrder: money.optional(),
+});
+
+export const adminWholesalerPatch = z.object({
+  businessName: str(160).min(2).optional(),
+  isVerified: z.boolean().optional(),
 });

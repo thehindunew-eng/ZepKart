@@ -331,8 +331,12 @@ export const DEMO_STORES: DemoStore[] = [
 ];
 
 /** Live ad campaigns shown on the home carousel (sample videos hosted publicly). */
+/** Demo admin. Signs in on /auth like any account; signup as admin needs the admin access password. */
+export const DEMO_ADMIN = { email: "admin@zepkart.demo", name: "ZepKart Admin", phone: "9810000000" };
+
+/** Three featured clips shipped in public/demo-ads (12 seconds each). */
 export const DEMO_CAMPAIGNS = [
-  { store: 0, title: "Atta & rice pre-festive offers", description: "Stock up on 5 kg atta and basmati this week.", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4", durationSec: 15, planDays: 7, daysAgo: 2 },
-  { store: 1, title: "Fresh paneer every morning", description: "Soft paneer cut to order from our Karol Bagh dairy.", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", durationSec: 30, planDays: 15, daysAgo: 4 },
-  { store: 4, title: "Weekend farm box", description: "Seasonal produce from Sector 56, delivered Saturday morning.", videoUrl: "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4", durationSec: 45, planDays: 30, daysAgo: 6 },
+  { store: 0, title: "Atta & rice pre-festive offers", description: "Stock up on 5 kg atta and basmati this week.", videoUrl: "/demo-ads/clip-fresh-produce.mp4", durationSec: 12, planDays: 7, daysAgo: 2 },
+  { store: 1, title: "Fresh paneer every morning", description: "Soft paneer cut to order from our Karol Bagh dairy.", videoUrl: "/demo-ads/clip-dairy-bakery.mp4", durationSec: 12, planDays: 15, daysAgo: 4 },
+  { store: 4, title: "Weekend farm box", description: "Seasonal produce from Sector 56, delivered Saturday morning.", videoUrl: "/demo-ads/clip-weekend-deals.mp4", durationSec: 12, planDays: 30, daysAgo: 6 },
 ];

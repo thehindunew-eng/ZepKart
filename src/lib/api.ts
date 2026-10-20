@@ -45,9 +45,12 @@ const ROLE_ERROR: Record<string, string> = {
   vendor: "Vendor account required",
   customer: "Customer account required",
   wholesaler: "Wholesaler account required",
+  admin: "Admin access required",
 };
 
-export async function requireUser(role?: "customer" | "vendor" | "wholesaler") {
+export type Role = "customer" | "vendor" | "wholesaler" | "admin";
+
+export async function requireUser(role?: Role) {
   const user = await currentUser();
   if (!user) fail(401, "Please log in to continue");
   if (role && user.role !== role) fail(403, ROLE_ERROR[role]);
@@ -65,6 +68,30 @@ export async function requireWholesaler() {
 /** Premium-only gate for vendor features that touch wholesalers. */
 export function requirePremium(store: { plan: string; planExpiresAt: Date | null }) {
   if (!isPremium(store)) fail(402, "Upgrade to Premium to use wholesalers");
+}
+
+/** Admin-only routes. Admins are never allowed through customer or vendor checks. */
+export async function requireAdmin() {
+  return requireUser("admin");
+}
+
+/**
+ * Ad requests are raised by a vendor (for their store) or a wholesaler (for their business).
+ * Returns exactly one of store or wholesaler, so each campaign belongs to a single requester.
+ */
+export async function requireAdRequester() {
+  const user = await requireUser();
+  if (user.role === "vendor") {
+    const rows = await db.select().from(stores).where(eq(stores.ownerId, user.id)).limit(1);
+    if (!rows[0]) fail(404, "Store not found for this account");
+    return { user, storeId: rows[0].id, wholesalerId: null as string | null, label: rows[0].shopName };
+  }
+  if (user.role === "wholesaler") {
+    const rows = await db.select().from(wholesalers).where(eq(wholesalers.userId, user.id)).limit(1);
+    if (!rows[0]) fail(404, "Wholesaler profile not found for this account");
+    return { user, storeId: null as string | null, wholesalerId: rows[0].id, label: rows[0].businessName };
+  }
+  fail(403, "Vendor or wholesaler account required");
 }
 
 /** Vendor helper: returns the logged-in vendor and their store. */

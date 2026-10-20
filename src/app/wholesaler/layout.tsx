@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { Inbox, Package, UserCog, LogOut, Warehouse } from "lucide-react";
+import { Inbox, Package, UserCog, LogOut, Warehouse, Megaphone } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import { Logo } from "@/components/ShopHeader";
 import { Skeleton, EmptyState, Button } from "@/components/ui";
@@ -12,6 +12,7 @@ import { cn, initials } from "@/lib/utils";
 const NAV = [
   { href: "/wholesaler", label: "Requests & quotes", icon: Inbox },
   { href: "/wholesaler/catalog", label: "Catalog", icon: Package },
+  { href: "/wholesaler/ads", label: "Ads", icon: Megaphone },
   { href: "/wholesaler/profile", label: "Business profile", icon: UserCog },
 ];
 

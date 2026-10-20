@@ -1,7 +1,7 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { adCampaigns } from "@/db/schema";
-import { fail, ok, requireVendor, route } from "@/lib/api";
+import { ok, requireAdRequester, route, fail } from "@/lib/api";
 import { adCreate } from "@/lib/validators";
 import { storedMediaInfo } from "@/lib/media";
 import { quoteAd, MAX_AD_SECONDS } from "@/lib/pricing";
@@ -10,16 +10,17 @@ import { activeCampaignCount, campaignDto } from "@/lib/campaigns";
 
 export const dynamic = "force-dynamic";
 
-
+/** The requester's own ad requests (vendor store or wholesaler business). */
 export const GET = route(async () => {
-  const { store } = await requireVendor();
-  const rows = await db.select().from(adCampaigns).where(eq(adCampaigns.storeId, store.id)).orderBy(desc(adCampaigns.createdAt));
+  const { storeId, wholesalerId } = await requireAdRequester();
+  const scope = storeId ? eq(adCampaigns.storeId, storeId) : eq(adCampaigns.wholesalerId, wholesalerId!);
+  const rows = await db.select().from(adCampaigns).where(and(scope)).orderBy(desc(adCampaigns.createdAt));
   return ok({ campaigns: rows.map(campaignDto) });
 });
 
-/** Creates a draft campaign with a locked price. Duration is re-checked from the file. */
+/** Creates an unpaid draft with a locked price. The duration is re-checked from the uploaded file. */
 export const POST = route(async (req) => {
-  const { store } = await requireVendor();
+  const { user, storeId, wholesalerId } = await requireAdRequester();
   const body = adCreate.parse(await req.json());
   const media = await storedMediaInfo(body.videoUrl);
   if (!media) fail(400, "Upload your video again");
@@ -32,7 +33,9 @@ export const POST = route(async (req) => {
   const [row] = await db
     .insert(adCampaigns)
     .values({
-      storeId: store.id,
+      storeId,
+      wholesalerId,
+      requesterId: user.id,
       title: body.title,
       description: body.description || null,
       videoUrl: body.videoUrl,
@@ -53,3 +56,4 @@ export const POST = route(async (req) => {
     .returning();
   return ok({ campaign: campaignDto(row) }, 201);
 });
+

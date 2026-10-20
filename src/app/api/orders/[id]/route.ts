@@ -5,9 +5,15 @@ import { fail, ok, requireUser, route } from "@/lib/api";
 import { orderAction } from "@/lib/validators";
 import { NEXT_STATUS, restoreStock } from "@/lib/orders";
 import { refreshStore } from "@/lib/store-status";
+import { assignRider } from "@/lib/tracking";
 import { num } from "@/lib/dto";
 
 export const dynamic = "force-dynamic";
+
+function riderFields(orderId: string) {
+  const r = assignRider(orderId);
+  return { riderName: r.name, riderVehicle: r.vehicle, riderPhone: r.phone };
+}
 type Ctx = { params: Promise<{ id: string }> };
 
 export const GET = route<Ctx>(async (_req, ctx) => {
@@ -54,7 +60,8 @@ export const PATCH = route<Ctx>(async (req, ctx) => {
           .where(eq(orders.id, o.id));
       });
     } else {
-      await db.update(orders).set({ status: step.to, updatedAt: new Date() }).where(eq(orders.id, o.id));
+      const extra = step.to === "out_for_delivery" ? { dispatchedAt: new Date(), ...riderFields(o.id) } : {};
+      await db.update(orders).set({ status: step.to, updatedAt: new Date(), ...extra }).where(eq(orders.id, o.id));
     }
   }
   const [fresh] = await db.select().from(orders).where(eq(orders.id, id)).limit(1);

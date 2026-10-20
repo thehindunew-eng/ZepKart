@@ -1,15 +1,11 @@
-import path from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { mediaFiles } from "@/db/schema";
 import { fail } from "@/lib/api";
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_VIDEO_BYTES = 60 * 1024 * 1024;
-
-export function uploadRoot() {
-  const configured = process.env.UPLOAD_DIR || "storage/uploads";
-  return path.isAbsolute(configured) ? configured : path.join(/*turbopackIgnore: true*/ process.cwd(), configured);
-}
 
 export type DetectedKind = { kind: "image"; ext: "jpg" | "png" | "webp" } | { kind: "video"; ext: "mp4" | "mov" };
 
@@ -79,29 +75,27 @@ export function validateUpload(buf: Buffer, expected: "image" | "video") {
   return kind;
 }
 
+const EXT_MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+};
+
+/** Stores an upload in Postgres and returns its public URL. */
 export async function saveFile(buf: Buffer, ext: string) {
-  const dir = uploadRoot();
-  await mkdir(/*turbopackIgnore: true*/ dir, { recursive: true });
   const name = `${randomUUID()}.${ext}`;
-  await writeFile(/*turbopackIgnore: true*/ path.join(dir, name), buf);
+  await db.insert(mediaFiles).values({ name, mime: EXT_MIME[ext] ?? "application/octet-stream", size: buf.length, data: buf });
   return `/api/media/${name}`;
 }
 
 const SAFE_NAME = /^[a-f0-9-]{36}\.(jpg|png|webp|mp4|mov)$/;
 
-export function mediaFilePath(name: string) {
-  if (!SAFE_NAME.test(name)) return null;
-  return path.join(/*turbopackIgnore: true*/ uploadRoot(), name);
-}
-
 export async function readStoredFile(name: string) {
-  const p = mediaFilePath(name);
-  if (!p) return null;
-  try {
-    return await readFile(/*turbopackIgnore: true*/ p);
-  } catch {
-    return null;
-  }
+  if (!SAFE_NAME.test(name)) return null;
+  const [row] = await db.select().from(mediaFiles).where(eq(mediaFiles.name, name)).limit(1);
+  return row ? { buf: row.data as Buffer, mime: row.mime } : null;
 }
 
 export const MIME: Record<string, string> = {
@@ -116,7 +110,7 @@ export const MIME: Record<string, string> = {
 export async function storedMediaInfo(url: string) {
   const m = /^\/api\/media\/([^/?#]+)$/.exec(url);
   if (!m) return null;
-  const buf = await readStoredFile(m[1]);
-  if (!buf) return null;
-  return { buf, durationSec: readVideoDurationSec(buf) };
+  const file = await readStoredFile(m[1]);
+  if (!file) return null;
+  return { buf: file.buf, durationSec: readVideoDurationSec(file.buf) };
 }
